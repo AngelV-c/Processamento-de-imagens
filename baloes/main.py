@@ -6,12 +6,12 @@ import os
 import sys
 from collections import Counter
 
-# Adiciona src/ ao path para imports diretos
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from preprocess import carregar_e_preprocessar
 from segmentation import segmentar_cores
 from detection import detectar_baloes
+from detection_hough import detectar_baloes_hough
 from visualize import desenhar_deteccoes, salvar_resultados
 
 
@@ -39,11 +39,16 @@ def main() -> None:
     parser.add_argument("--clahe", action="store_true", help="Habilita CLAHE no canal V.")
     parser.add_argument("--wb", action="store_true", help="Habilita gray-world white balance.")
     parser.add_argument("--blur", type=int, default=5, help="Kernel do blur gaussiano (ímpar).")
+    parser.add_argument(
+        "--metodo",
+        choices=["contorno", "hough"],
+        default="hough",
+        help="Método de detecção: 'contorno' (máscara HSV) ou 'hough' (HoughCircles + cor por amostragem).",
+    )
     args = parser.parse_args()
 
     config = _carregar_config(args.config)
 
-    # Etapa 1–2: carregamento e pré-processamento
     print(f"[1/4] Carregando e pré-processando: {args.imagem}")
     hsv, bgr_original = carregar_e_preprocessar(
         args.imagem,
@@ -53,21 +58,23 @@ def main() -> None:
         kernel_blur=args.blur,
     )
 
-    # Etapa 3: segmentação por cor
-    print("[2/4] Segmentando por cor...")
-    mascaras = segmentar_cores(hsv, config)
+    if args.metodo == "hough":
+        print("[2/4] Segmentando por cor (para classificação)...")
+        mascaras = segmentar_cores(hsv, config)
+        print("[3/4] Detectando círculos com HoughCircles + classificando cor...")
+        deteccoes = detectar_baloes_hough(bgr_original, hsv, config)
+    else:
+        print("[2/4] Segmentando por cor...")
+        mascaras = segmentar_cores(hsv, config)
+        print("[3/4] Detectando balões por contorno e circularidade...")
+        deteccoes = detectar_baloes(bgr_original, config, mascaras)
 
-    # Etapa 4: detecção por contorno e circularidade
-    print("[3/4] Detectando balões...")
-    deteccoes = detectar_baloes(bgr_original, config, mascaras)
-
-    # Geração de overlays
     print("[4/4] Gerando overlays em:", args.saida)
     imagem_anotada = desenhar_deteccoes(bgr_original, deteccoes)
-    salvar_resultados(args.saida, imagem_anotada, mascaras)
+    mascaras_para_salvar = mascaras if args.metodo == "contorno" else segmentar_cores(hsv, config)
+    salvar_resultados(args.saida, imagem_anotada, mascaras_para_salvar)
 
-    # Resumo
-    print("\n=== Resumo de detecções ===")
+    print(f"\n=== Resumo de detecções [{args.metodo}] ===")
     if not deteccoes:
         print("  Nenhum balão detectado.")
     else:

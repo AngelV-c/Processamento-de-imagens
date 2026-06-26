@@ -56,5 +56,13 @@
     "area_maxima_relativa": 0.15,
     "circularidade_minima": 0.6,
     "kernel_morfologia": 5
+  },
+  "hough": {
+    "dp": 1.2,
+    "param1": 120,
+    "param2": 45,
+    "min_dist_relativa": 0.06,
+    "fracao_interna": 0.55,
+    "limiar_cobertura_cor": 0.35
   }
 }
