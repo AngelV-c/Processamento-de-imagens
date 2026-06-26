@@ -5,4 +5,5 @@ output/*.jpg
 output/*.png
 output/testes/
 output/hough/
+output/watershed/
 !output/.gitkeep
