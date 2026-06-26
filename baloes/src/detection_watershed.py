@@ -18,22 +18,29 @@ from typing import Dict, List
 from detection import Deteccao, _calcular_circularidade, _metricas_forma, _forma_de_balao
 
 
-def _watershed_mascara(mascara: np.ndarray) -> np.ndarray:
+def _watershed_mascara(
+    mascara: np.ndarray,
+    kernel_maximos: int = 9,
+    limiar_distancia: float = 0.2,
+) -> np.ndarray:
     """Aplica watershed numa máscara binária e retorna imagem de labels.
 
-    Cada região separada recebe um label inteiro positivo distinto.
+    Args:
+        kernel_maximos: Tamanho do kernel para encontrar máximos locais.
+            Menor = mais sensível a picos próximos → separa balões mais colados.
+        limiar_distancia: Fração mínima da distância máxima para considerar pico.
+            Menor = encontra mais máximos em regiões densas.
     """
-    # Distance transform: cada pixel recebe distância ao fundo mais próximo
     dist = cv2.distanceTransform(mascara, cv2.DIST_L2, 5)
 
-    # Normaliza para visualização e para encontrar máximos
-    _, dist_norm = cv2.threshold(dist, 0, 1.0, cv2.THRESH_TOZERO)
+    dist_max = dist.max()
+    if dist_max == 0:
+        return np.zeros_like(mascara, dtype=np.int32)
+    dist_norm = dist / dist_max
 
-    # Pico local: pixels que são maiores que todos os vizinhos num raio
-    # Usamos dilatação: se pixel == dilatação(pixel), é máximo local
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_maximos, kernel_maximos))
     dist_dilatada = cv2.dilate(dist_norm, kernel)
-    maximos_locais = (dist_norm == dist_dilatada) & (dist_norm > 0.3)
+    maximos_locais = (dist_norm == dist_dilatada) & (dist_norm > limiar_distancia)
 
     # Cada máximo local vira um marcador único
     _, marcadores = cv2.connectedComponents(
@@ -74,11 +81,16 @@ def detectar_baloes_watershed(
 
     deteccoes: List[Deteccao] = []
 
-    for nome_cor, mascara in mascaras.items():
+    ws_cfg = config.get("watershed", {})
+    kernel_maximos   = ws_cfg.get("kernel_maximos", 9)
+    limiar_distancia = ws_cfg.get("limiar_distancia", 0.2)
+
+    for nome_cor, mascaras_cor in mascaras.items():
+        mascara = mascaras_cor
         if cv2.countNonZero(mascara) == 0:
             continue
 
-        labels = _watershed_mascara(mascara)
+        labels = _watershed_mascara(mascara, kernel_maximos, limiar_distancia)
         n_labels = labels.max()
 
         for label in range(1, n_labels + 1):
@@ -88,6 +100,7 @@ def detectar_baloes_watershed(
             contornos, _ = cv2.findContours(
                 regiao, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
             )
+
             if not contornos:
                 continue
 
