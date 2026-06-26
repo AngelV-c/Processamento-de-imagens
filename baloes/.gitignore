@@ -12,3 +12,5 @@ output/watershed_v2/
 
 output/ms/
 output/ft2_*/
+output/debug_cluster/
+output/debug_regioes/
