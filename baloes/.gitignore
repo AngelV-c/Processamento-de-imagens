@@ -4,4 +4,5 @@ __pycache__/
 output/*.jpg
 output/*.png
 output/testes/
+output/hough/
 !output/.gitkeep
