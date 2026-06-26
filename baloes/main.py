@@ -11,10 +11,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 from preprocess import carregar_e_preprocessar
 from segmentation import segmentar_cores
 from segmentation_meanshift import segmentar_cores_meanshift
+from segmentation_lab import segmentar_cores_lab
 from detection import detectar_baloes
 from detection_hough import detectar_baloes_hough
 from detection_watershed import detectar_baloes_watershed
 from visualize import desenhar_deteccoes, salvar_resultados
+
+_DIR = os.path.dirname(__file__)
 
 
 def _carregar_config(caminho: str) -> dict:
@@ -29,12 +32,17 @@ def main() -> None:
     parser.add_argument("--imagem", required=True, help="Caminho para a imagem de entrada.")
     parser.add_argument(
         "--config",
-        default=os.path.join(os.path.dirname(__file__), "config", "cores.json"),
+        default=os.path.join(_DIR, "config", "cores.json"),
         help="Caminho para cores.json.",
     )
     parser.add_argument(
+        "--calibracao",
+        default=os.path.join(_DIR, "config", "calibracao_lab.json"),
+        help="Caminho para calibracao_lab.json (usado com --segmentacao lab).",
+    )
+    parser.add_argument(
         "--saida",
-        default=os.path.join(os.path.dirname(__file__), "output"),
+        default=os.path.join(_DIR, "output"),
         help="Diretório de saída para overlays e máscaras.",
     )
     parser.add_argument("--largura", type=int, default=None, help="Largura máxima em pixels.")
@@ -42,10 +50,21 @@ def main() -> None:
     parser.add_argument("--wb", action="store_true", help="Habilita gray-world white balance.")
     parser.add_argument("--blur", type=int, default=5, help="Kernel do blur gaussiano (ímpar).")
     parser.add_argument(
+        "--limiar-lab",
+        type=float,
+        default=18.0,
+        help="Distância de Mahalanobis máxima para aceitar pixel (usado com --segmentacao lab).",
+    )
+    parser.add_argument(
         "--segmentacao",
-        choices=["hsv", "meanshift"],
+        choices=["hsv", "meanshift", "lab"],
         default="hsv",
-        help="Método de segmentação de cor: 'hsv' (faixas fixas) ou 'meanshift' (regiões + cor média).",
+        help=(
+            "Método de segmentação de cor:\n"
+            "  hsv       — faixas HSV fixas (padrão)\n"
+            "  meanshift — mean-shift + faixas HSV\n"
+            "  lab       — distância de Mahalanobis no espaço LAB (mais robusto)"
+        ),
     )
     parser.add_argument(
         "--metodo",
@@ -53,8 +72,8 @@ def main() -> None:
         default="contorno",
         help=(
             "Método de detecção:\n"
-            "  contorno   — contorno + circularidade na máscara HSV (padrão)\n"
-            "  watershed  — separa balões sobrepostos com watershed dentro da máscara\n"
+            "  contorno   — contorno + circularidade na máscara (padrão)\n"
+            "  watershed  — separa balões sobrepostos com watershed\n"
             "  hough      — HoughCircles + classificação de cor por amostragem"
         ),
     )
@@ -74,6 +93,9 @@ def main() -> None:
     print(f"[2/4] Segmentando por cor [{args.segmentacao}]...")
     if args.segmentacao == "meanshift":
         mascaras = segmentar_cores_meanshift(bgr_original, config)
+    elif args.segmentacao == "lab":
+        calibracao = _carregar_config(args.calibracao)
+        mascaras = segmentar_cores_lab(bgr_original, config, calibracao, limiar_distancia=args.limiar_lab)
     else:
         mascaras = segmentar_cores(hsv, config)
 
@@ -89,7 +111,7 @@ def main() -> None:
     imagem_anotada = desenhar_deteccoes(bgr_original, deteccoes)
     salvar_resultados(args.saida, imagem_anotada, mascaras)
 
-    print(f"\n=== Resumo de detecções [{args.metodo}] ===")
+    print(f"\n=== Resumo de detecções [{args.segmentacao}+{args.metodo}] ===")
     if not deteccoes:
         print("  Nenhum balão detectado.")
     else:
@@ -98,8 +120,8 @@ def main() -> None:
             print(f"  {cor}: {qtd} balão(ões)")
         print(f"  Total: {len(deteccoes)}")
 
-    # TODO: encaminhar `deteccoes` para a etapa 5 (correção de perspectiva por homografia)
-    # TODO: encaminhar `deteccoes` para a etapa 6 (agrupamento por equipe com DBSCAN)
+    # TODO: etapa 5 — homografia para coordenadas reais
+    # TODO: etapa 6 — DBSCAN para agrupamento por mesa
 
 
 if __name__ == "__main__":
