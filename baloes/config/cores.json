@@ -45,6 +45,18 @@
       ]
     }
   ],
+  {
+  "nome": "branco",
+  "faixas": [
+    {"lower": [0, 0, 180], "upper": [179, 40, 255]}
+  ]
+},
+{
+  "nome": "laranja",
+  "faixas": [
+    {"lower": [11, 180, 100], "upper": [19, 255, 255]}
+  ]
+}
   "deteccao": {
     "area_minima_relativa": 0.0005,
     "area_maxima_relativa": 0.15,
