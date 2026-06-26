@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 from typing import Dict, List
 
-from detection import Deteccao, _calcular_circularidade, _metricas_forma, _forma_de_balao
+from detection import Deteccao, _calcular_circularidade, _metricas_forma, _forma_de_balao, _variancia_cor, _defect_ratio, _textura_de_balao
 
 
 def _watershed_mascara(
@@ -72,6 +72,7 @@ def detectar_baloes_watershed(
     Returns:
         Lista de Deteccao ordenada por cor e área decrescente.
     """
+    imagem_hsv = cv2.cvtColor(imagem_bgr, cv2.COLOR_BGR2HSV)
     altura, largura = imagem_bgr.shape[:2]
     area_total = altura * largura
 
@@ -111,6 +112,11 @@ def detectar_baloes_watershed(
 
             circularidade, solidity, aspect_ratio = _metricas_forma(contorno)
             if not _forma_de_balao(circularidade, solidity, aspect_ratio, cfg):
+                continue
+
+            var_cor = _variancia_cor(imagem_hsv, contorno)
+            def_r = _defect_ratio(contorno, area)
+            if not _textura_de_balao(var_cor, def_r, cfg):
                 continue
 
             momentos = cv2.moments(contorno)

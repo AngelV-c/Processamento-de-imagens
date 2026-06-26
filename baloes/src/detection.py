@@ -1,18 +1,22 @@
 """Detecção de balões por contorno com filtro de forma de balão.
 
-O filtro combina três métricas de forma para discriminar balões de outros objetos:
+O filtro combina cinco métricas para discriminar balões de outros objetos:
 
-  circularidade = 4π·A/P²      — quão próximo de um círculo perfeito (0→1)
-  solidity      = A / A_hull   — quão convexo é o contorno (0→1)
-  aspect_ratio  = w / h        — relação largura/altura do retângulo envolvente
+  circularidade   = 4π·A/P²            — quão próximo de um círculo (0→1)
+  solidity        = A / A_hull          — quão convexo é o contorno (0→1)
+  aspect_ratio    = w / h               — relação largura/altura
+  variancia_cor   = std(H) na região    — uniformidade de cor interna
+  defect_ratio    = Σdefects / A        — profundidade relativa de concavidades
 
 Um balão flutuante típico tem:
-  - Solidity alta (> 0.85): corpo convexo, poucas concavidades
-  - Aspect ratio moderado (0.5–1.3): levemente mais alto que largo
-  - Circularidade média (> 0.5): o nó na base reduz a circularidade
+  - circularidade > 0.5 (o nó na base reduz um pouco)
+  - solidity > 0.85 (corpo convexo)
+  - aspect_ratio 0.5–1.5
+  - std(H) baixo (cor uniforme — sem logos, texturas, vincos)
+  - defects pequenos relativos à área
 
-Essa combinação rejeita camisetas, banners, monitores e ventiladores
-que passariam pelo filtro de circularidade isolado.
+Camisetas, banners e mesas costumam falhar em variancia_cor ou defect_ratio
+mesmo quando o contorno externo parece circular.
 """
 
 import math
@@ -44,7 +48,6 @@ class Deteccao:
 
 
 def _calcular_circularidade(area: float, perimetro: float) -> float:
-    """Retorna 4π·A/P² ou 0 se o perímetro for zero."""
     if perimetro <= 0:
         return 0.0
     return 4 * math.pi * area / (perimetro ** 2)
@@ -66,13 +69,55 @@ def _metricas_forma(contorno: np.ndarray) -> Tuple[float, float, float]:
     return circularidade, solidity, aspect_ratio
 
 
+def _variancia_cor(
+    imagem_hsv: np.ndarray,
+    contorno: np.ndarray,
+) -> float:
+    """Desvio padrão do canal H dentro do contorno.
+
+    Balões têm cor uniforme (std baixo). Camisetas com logos ou roupas
+    com vincos têm H variando muito internamente.
+    Retorna valor normalizado [0, 1] onde 0 = perfeitamente uniforme.
+    """
+    mask = np.zeros(imagem_hsv.shape[:2], dtype=np.uint8)
+    cv2.drawContours(mask, [contorno], -1, 255, cv2.FILLED)
+    pixels_h = imagem_hsv[mask > 0, 0].astype(np.float32)
+    if len(pixels_h) < 5:
+        return 1.0
+    # H é circular (0–179); usa desvio circular simplificado
+    std_h = float(np.std(pixels_h))
+    return std_h / 90.0  # normaliza: 90 = desvio máximo possível
+
+
+def _defect_ratio(contorno: np.ndarray, area: float) -> float:
+    """Soma das profundidades dos convexity defects dividida pela área.
+
+    Balões têm poucos e pequenos defects (corpo convexo).
+    Formas irregulares (camiseta dobrada, mesa) têm defects grandes.
+    """
+    if len(contorno) < 5 or area <= 0:
+        return 0.0
+    hull_idx = cv2.convexHull(contorno, returnPoints=False)
+    if hull_idx is None or len(hull_idx) < 3:
+        return 0.0
+    try:
+        defects = cv2.convexityDefects(contorno, hull_idx)
+    except cv2.error:
+        return 0.0
+    if defects is None:
+        return 0.0
+    # Profundidade em pixels (defects[:, 0, 3] / 256.0)
+    depths = defects[:, 0, 3] / 256.0
+    return float(depths.sum()) / area
+
+
 def _forma_de_balao(
     circularidade: float,
     solidity: float,
     aspect_ratio: float,
     cfg: dict,
 ) -> bool:
-    """Retorna True se as métricas são compatíveis com a forma de um balão."""
+    """Retorna True se forma básica (contorno) é compatível com balão."""
     return (
         circularidade >= cfg["circularidade_minima"]
         and solidity >= cfg["solidity_minima"]
@@ -80,21 +125,23 @@ def _forma_de_balao(
     )
 
 
+def _textura_de_balao(
+    var_cor: float,
+    def_ratio: float,
+    cfg: dict,
+) -> bool:
+    """Retorna True se a textura interna é compatível com balão."""
+    var_max = cfg.get("variancia_cor_maxima", 0.25)
+    def_max = cfg.get("defect_ratio_maximo", 0.15)
+    return var_cor <= var_max and def_ratio <= def_max
+
+
 def detectar_baloes(
     imagem_bgr: np.ndarray,
     config: dict,
     mascaras: Dict[str, np.ndarray],
 ) -> List[Deteccao]:
-    """Detecta balões filtrando por área e forma característica de balão.
-
-    Args:
-        imagem_bgr: Imagem original em BGR (usada apenas para obter dimensões).
-        config: Dicionário carregado de cores.json.
-        mascaras: Dicionário {nome_cor: máscara_binária} vindo de segmentar_cores().
-
-    Returns:
-        Lista de Deteccao ordenada por cor e depois por área decrescente.
-    """
+    """Detecta balões filtrando por área, forma e uniformidade de cor interna."""
     altura, largura = imagem_bgr.shape[:2]
     area_total = altura * largura
 
@@ -102,6 +149,7 @@ def detectar_baloes(
     area_min = cfg["area_minima_relativa"] * area_total
     area_max = cfg["area_maxima_relativa"] * area_total
 
+    imagem_hsv = cv2.cvtColor(imagem_bgr, cv2.COLOR_BGR2HSV)
     deteccoes: List[Deteccao] = []
 
     for nome_cor, mascara in mascaras.items():
@@ -117,6 +165,11 @@ def detectar_baloes(
             if not _forma_de_balao(circularidade, solidity, aspect_ratio, cfg):
                 continue
 
+            var_cor = _variancia_cor(imagem_hsv, contorno)
+            def_r = _defect_ratio(contorno, area)
+            if not _textura_de_balao(var_cor, def_r, cfg):
+                continue
+
             momentos = cv2.moments(contorno)
             if momentos["m00"] == 0:
                 continue
@@ -127,8 +180,7 @@ def detectar_baloes(
             deteccoes.append(
                 Deteccao(
                     cor=nome_cor,
-                    cx=cx,
-                    cy=cy,
+                    cx=cx, cy=cy,
                     area=area,
                     circularidade=circularidade,
                     raio=raio,

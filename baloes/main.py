@@ -100,7 +100,7 @@ def main() -> None:
         mascaras = segmentar_cores_lab(bgr_original, config, calibracao, limiar_distancia=args.limiar_lab)
     elif args.segmentacao == "superpixel":
         calibracao = _carregar_config(args.calibracao)
-        mascaras = segmentar_cores_superpixel(bgr_original, config, calibracao, limiar_distancia=args.limiar_lab)
+        mascaras = segmentar_cores_superpixel(bgr_original, config, calibracao)
     else:
         mascaras = segmentar_cores(hsv, config)
 
