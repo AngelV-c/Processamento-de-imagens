@@ -20,7 +20,7 @@ def segmentar_cores_meanshift(
     bgr: np.ndarray,
     config: dict,
     spatial_radius: int = 21,
-    color_radius: int = 40,
+    color_radius: int = 25,
 ) -> Dict[str, np.ndarray]:
     """Segmenta cores aplicando mean-shift antes da limiarização HSV.
 
