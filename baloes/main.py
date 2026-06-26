@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from preprocess import carregar_e_preprocessar
 from segmentation import segmentar_cores
+from segmentation_meanshift import segmentar_cores_meanshift
 from detection import detectar_baloes
 from detection_hough import detectar_baloes_hough
 from detection_watershed import detectar_baloes_watershed
@@ -41,6 +42,12 @@ def main() -> None:
     parser.add_argument("--wb", action="store_true", help="Habilita gray-world white balance.")
     parser.add_argument("--blur", type=int, default=5, help="Kernel do blur gaussiano (ímpar).")
     parser.add_argument(
+        "--segmentacao",
+        choices=["hsv", "meanshift"],
+        default="hsv",
+        help="Método de segmentação de cor: 'hsv' (faixas fixas) ou 'meanshift' (regiões + cor média).",
+    )
+    parser.add_argument(
         "--metodo",
         choices=["contorno", "watershed", "hough"],
         default="contorno",
@@ -64,8 +71,11 @@ def main() -> None:
         kernel_blur=args.blur,
     )
 
-    print("[2/4] Segmentando por cor...")
-    mascaras = segmentar_cores(hsv, config)
+    print(f"[2/4] Segmentando por cor [{args.segmentacao}]...")
+    if args.segmentacao == "meanshift":
+        mascaras = segmentar_cores_meanshift(bgr_original, config)
+    else:
+        mascaras = segmentar_cores(hsv, config)
 
     print(f"[3/4] Detectando balões [{args.metodo}]...")
     if args.metodo == "contorno":
