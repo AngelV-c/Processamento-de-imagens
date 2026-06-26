@@ -12,6 +12,7 @@ from preprocess import carregar_e_preprocessar
 from segmentation import segmentar_cores
 from segmentation_meanshift import segmentar_cores_meanshift
 from segmentation_lab import segmentar_cores_lab
+from segmentation_superpixel import segmentar_cores_superpixel
 from detection import detectar_baloes
 from detection_hough import detectar_baloes_hough
 from detection_watershed import detectar_baloes_watershed
@@ -57,13 +58,14 @@ def main() -> None:
     )
     parser.add_argument(
         "--segmentacao",
-        choices=["hsv", "meanshift", "lab"],
+        choices=["hsv", "meanshift", "lab", "superpixel"],
         default="hsv",
         help=(
             "Método de segmentação de cor:\n"
-            "  hsv       — faixas HSV fixas (padrão)\n"
-            "  meanshift — mean-shift + faixas HSV\n"
-            "  lab       — distância de Mahalanobis no espaço LAB (mais robusto)"
+            "  hsv        — faixas HSV fixas (padrão)\n"
+            "  meanshift  — mean-shift + faixas HSV\n"
+            "  lab        — Mahalanobis LAB pixel-a-pixel\n"
+            "  superpixel — SLIC + Mahalanobis LAB por região (mais robusto)"
         ),
     )
     parser.add_argument(
@@ -96,6 +98,9 @@ def main() -> None:
     elif args.segmentacao == "lab":
         calibracao = _carregar_config(args.calibracao)
         mascaras = segmentar_cores_lab(bgr_original, config, calibracao, limiar_distancia=args.limiar_lab)
+    elif args.segmentacao == "superpixel":
+        calibracao = _carregar_config(args.calibracao)
+        mascaras = segmentar_cores_superpixel(bgr_original, config, calibracao, limiar_distancia=args.limiar_lab)
     else:
         mascaras = segmentar_cores(hsv, config)
 
