@@ -59,8 +59,6 @@
     "solidity_minima": 0.85,
     "aspect_ratio_min": 0.5,
     "aspect_ratio_max": 1.5,
-    "variancia_cor_maxima": 0.35,
-    "defect_ratio_maximo": 0.20,
     "kernel_morfologia": 5
   },
   "watershed": {
