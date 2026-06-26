@@ -12,6 +12,7 @@ from preprocess import carregar_e_preprocessar
 from segmentation import segmentar_cores
 from detection import detectar_baloes
 from detection_hough import detectar_baloes_hough
+from detection_watershed import detectar_baloes_watershed
 from visualize import desenhar_deteccoes, salvar_resultados
 
 
@@ -41,9 +42,14 @@ def main() -> None:
     parser.add_argument("--blur", type=int, default=5, help="Kernel do blur gaussiano (ímpar).")
     parser.add_argument(
         "--metodo",
-        choices=["contorno", "hough"],
-        default="hough",
-        help="Método de detecção: 'contorno' (máscara HSV) ou 'hough' (HoughCircles + cor por amostragem).",
+        choices=["contorno", "watershed", "hough"],
+        default="contorno",
+        help=(
+            "Método de detecção:\n"
+            "  contorno   — contorno + circularidade na máscara HSV (padrão)\n"
+            "  watershed  — separa balões sobrepostos com watershed dentro da máscara\n"
+            "  hough      — HoughCircles + classificação de cor por amostragem"
+        ),
     )
     args = parser.parse_args()
 
@@ -58,21 +64,20 @@ def main() -> None:
         kernel_blur=args.blur,
     )
 
-    if args.metodo == "hough":
-        print("[2/4] Segmentando por cor (para classificação)...")
-        mascaras = segmentar_cores(hsv, config)
-        print("[3/4] Detectando círculos com HoughCircles + classificando cor...")
-        deteccoes = detectar_baloes_hough(bgr_original, hsv, config)
-    else:
-        print("[2/4] Segmentando por cor...")
-        mascaras = segmentar_cores(hsv, config)
-        print("[3/4] Detectando balões por contorno e circularidade...")
+    print("[2/4] Segmentando por cor...")
+    mascaras = segmentar_cores(hsv, config)
+
+    print(f"[3/4] Detectando balões [{args.metodo}]...")
+    if args.metodo == "contorno":
         deteccoes = detectar_baloes(bgr_original, config, mascaras)
+    elif args.metodo == "watershed":
+        deteccoes = detectar_baloes_watershed(bgr_original, mascaras, config)
+    else:
+        deteccoes = detectar_baloes_hough(bgr_original, hsv, config)
 
     print("[4/4] Gerando overlays em:", args.saida)
     imagem_anotada = desenhar_deteccoes(bgr_original, deteccoes)
-    mascaras_para_salvar = mascaras if args.metodo == "contorno" else segmentar_cores(hsv, config)
-    salvar_resultados(args.saida, imagem_anotada, mascaras_para_salvar)
+    salvar_resultados(args.saida, imagem_anotada, mascaras)
 
     print(f"\n=== Resumo de detecções [{args.metodo}] ===")
     if not deteccoes:
