@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 from typing import Dict, List
 
-from detection import Deteccao, _calcular_circularidade
+from detection import Deteccao, _calcular_circularidade, _metricas_forma, _forma_de_balao
 
 
 def _watershed_mascara(mascara: np.ndarray) -> np.ndarray:
@@ -71,7 +71,6 @@ def detectar_baloes_watershed(
     cfg = config["deteccao"]
     area_min = cfg["area_minima_relativa"] * area_total
     area_max = cfg["area_maxima_relativa"] * area_total
-    circ_min = cfg["circularidade_minima"]
 
     deteccoes: List[Deteccao] = []
 
@@ -97,9 +96,8 @@ def detectar_baloes_watershed(
             if area < area_min or area > area_max:
                 continue
 
-            perimetro = cv2.arcLength(contorno, True)
-            circularidade = _calcular_circularidade(area, perimetro)
-            if circularidade < circ_min:
+            circularidade, solidity, aspect_ratio = _metricas_forma(contorno)
+            if not _forma_de_balao(circularidade, solidity, aspect_ratio, cfg):
                 continue
 
             momentos = cv2.moments(contorno)

@@ -54,7 +54,10 @@
   "deteccao": {
     "area_minima_relativa": 0.0005,
     "area_maxima_relativa": 0.15,
-    "circularidade_minima": 0.6,
+    "circularidade_minima": 0.5,
+    "solidity_minima": 0.85,
+    "aspect_ratio_min": 0.5,
+    "aspect_ratio_max": 1.3,
     "kernel_morfologia": 5
   },
   "hough": {
