@@ -52,7 +52,7 @@
     }
   ],
   "deteccao": {
-    "area_minima_relativa": 0.0005,
+    "area_minima_relativa": 0.0002,
     "area_maxima_relativa": 0.15,
     "circularidade_minima": 0.5,
     "solidity_minima": 0.85,
