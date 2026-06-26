@@ -95,7 +95,7 @@ def detectar_baloes_watershed(
 
         for label in range(1, n_labels + 1):
             regiao = np.zeros(mascara.shape, dtype=np.uint8)
-            regiao[labels == label] = 255
+            regiao[(labels == label) & (mascara > 0)] = 255
 
             contornos, _ = cv2.findContours(
                 regiao, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
