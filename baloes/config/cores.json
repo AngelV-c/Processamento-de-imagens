@@ -23,7 +23,7 @@
     {
       "nome": "azul",
       "faixas": [
-        {"lower": [95, 100, 60], "upper": [135, 255, 255]}
+        {"lower": [95, 80, 30], "upper": [135, 255, 255]}
       ]
     },
     {
@@ -60,7 +60,7 @@
   "deteccao": {
     "area_minima_relativa": 0.0005,
     "area_maxima_relativa": 0.15,
-    "circularidade_minima": 0.7,
-    "kernel_morfologia": 7
+    "circularidade_minima": 0.6,
+    "kernel_morfologia": 5
   }
 }
