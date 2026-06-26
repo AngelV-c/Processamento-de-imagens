@@ -6,4 +6,6 @@ output/*.png
 output/testes/
 output/hough/
 output/watershed/
+output/contorno_v2/
+output/watershed_v2/
 !output/.gitkeep
