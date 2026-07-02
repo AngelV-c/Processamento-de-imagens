@@ -16,6 +16,8 @@ _CORES_BGR: Dict[str, tuple] = {
     "rosa":     (180, 60, 220),
     "ciano":    (220, 200, 0),
     "roxo":     (160, 0, 160),
+    "branco":   (255, 255, 255),
+    "laranja":  (0, 130, 255),
 }
 _COR_PADRAO_BGR = (200, 200, 200)
 

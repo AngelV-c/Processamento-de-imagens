@@ -25,10 +25,19 @@ from segmentation_meanshift import segmentar_cores_meanshift
 from detection import detectar_baloes
 from detection_watershed import detectar_baloes_watershed
 from detection_fourier import detectar_baloes_fourier
+from detection_v2 import detectar_baloes_v2
 
 
-def _detectar(imagem: str, config: dict, segmentacao: str, metodo: str, largura: int):
+def _detectar(imagem: str, config: dict, segmentacao: str, metodo: str,
+              largura: int, calibracao_local: dict | None = None):
     hsv, bgr = carregar_e_preprocessar(imagem, largura_maxima=largura)
+
+    if metodo == "v2":
+        if calibracao_local is None:
+            return None  # imagem sem calibração local — pulada
+        deteccoes, _ = detectar_baloes_v2(bgr, config, calibracao_local)
+        return deteccoes
+
     if segmentacao == "meanshift":
         mascaras = segmentar_cores_meanshift(bgr, config)
     else:
@@ -44,7 +53,8 @@ def _detectar(imagem: str, config: dict, segmentacao: str, metodo: str, largura:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Avalia o pipeline contra config/gabaritos.json.")
     parser.add_argument("--segmentacao", choices=["hsv", "meanshift"], default="meanshift")
-    parser.add_argument("--metodo", choices=["contorno", "watershed", "fourier"], default="watershed")
+    parser.add_argument("--metodo", choices=["contorno", "watershed", "fourier", "v2"],
+                        default="watershed")
     parser.add_argument("--largura", type=int, default=1200)
     parser.add_argument("--gabarito", default=os.path.join(_DIR, "config", "gabaritos.json"))
     args = parser.parse_args()
@@ -65,7 +75,20 @@ def main() -> None:
             print(f"  {nome_imagem}: [pulada — arquivo não encontrado]")
             continue
 
-        deteccoes = _detectar(caminho, config, args.segmentacao, args.metodo, args.largura)
+        calibracao_local = None
+        if args.metodo == "v2":
+            cam_calib = esperado.get("calibracao")
+            if cam_calib:
+                cam_calib = os.path.join(_DIR, cam_calib)
+                if os.path.exists(cam_calib):
+                    with open(cam_calib, encoding="utf-8") as f:
+                        calibracao_local = json.load(f)
+
+        deteccoes = _detectar(caminho, config, args.segmentacao, args.metodo,
+                              args.largura, calibracao_local)
+        if deteccoes is None:
+            print(f"  {nome_imagem}: [pulada — sem calibração local para v2]")
+            continue
         contagem = Counter(d.cor for d in deteccoes)
 
         n_det = len(deteccoes)

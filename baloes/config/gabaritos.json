@@ -1,9 +1,13 @@
 {
-  "_comentario": "Ground truth por imagem de teste. 'total' é obrigatório; 'cores' é opcional (preencha quando souber a contagem real por cor). Usado por tools/avaliar.py para medir o pipeline contra TODAS as imagens de uma vez — evita otimizar para uma foto e quebrar as outras.",
+  "_comentario": "Ground truth por imagem de teste. 'total' é obrigatório; 'cores' é opcional (contagens confirmadas visualmente); 'calibracao' aponta o calibracao_local.json da cena (necessário para avaliar o método v2). Usado por tools/avaliar.py.",
   "Foto_Teste_2.jpeg": {
-    "total": 19
+    "total": 19,
+    "calibracao": "config/calibracoes/Foto_Teste_2.json"
   },
   "Teste_3.jpg": {
-    "total": 25
+    "total": 25,
+    "cores": {"amarelo": 1, "verde": 1},
+    "_nota": "rosa+branco somam 23; a divisão exata é ambígua até visualmente (rosa pálido vs branco sob luz quente).",
+    "calibracao": "config/calibracoes/Teste_3.json"
   }
 }

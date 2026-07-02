@@ -26,6 +26,7 @@ from detection_hough import detectar_baloes_hough
 from detection_watershed import detectar_baloes_watershed
 from detection_fourier import detectar_baloes_fourier
 from detection_shape_first import detectar_baloes_shape_first
+from detection_v2 import detectar_baloes_v2
 from homography import carregar_homografia, retificar, warp_debug
 from grouping import agrupar
 from reporting import montar_relatorio, salvar_relatorio_json, imprimir_relatorio
@@ -58,6 +59,7 @@ def executar_pipeline(
     caminho_homografia: str | None = None,
     eps: float | None = None,
     calibracao_lab: dict | None = None,
+    calibracao_local: dict | None = None,
     debug: bool = False,
     saida: str | None = None,
 ) -> dict:
@@ -77,6 +79,25 @@ def executar_pipeline(
         usar_white_balance=usar_wb,
         kernel_blur=kernel_blur,
     )
+
+    # Pipeline v2: segmentação calibrada + multi-via + score num passo só
+    if metodo == "v2":
+        if not calibracao_local:
+            raise ValueError(
+                "O método v2 exige config/calibracao_local.json — "
+                "gere com tools/calibrar_cores.py."
+            )
+        deteccoes, mascaras = detectar_baloes_v2(bgr_original, config, calibracao_local)
+        # No v2 as cores (e letras de problema) vêm da calibração local
+        config_v2 = dict(config)
+        config_v2["cores"] = [
+            {"nome": nome, "problema": modelo.get("problema", "?")}
+            for nome, modelo in calibracao_local["cores"].items()
+        ]
+        return _finalizar_pipeline(
+            bgr_original, deteccoes, mascaras, config_v2, avisos,
+            caminho_homografia, eps, debug, saida,
+        )
 
     # Etapa 3: segmentação por cor
     if segmentacao == "meanshift":
@@ -100,6 +121,24 @@ def executar_pipeline(
     else:
         deteccoes = detectar_baloes(bgr_original, config, mascaras)
 
+    return _finalizar_pipeline(
+        bgr_original, deteccoes, mascaras, config, avisos,
+        caminho_homografia, eps, debug, saida,
+    )
+
+
+def _finalizar_pipeline(
+    bgr_original,
+    deteccoes,
+    mascaras,
+    config: dict,
+    avisos: list[str],
+    caminho_homografia: str | None,
+    eps: float | None,
+    debug: bool,
+    saida: str | None,
+) -> dict:
+    """Etapas 5–7 + visualização/saída, compartilhadas por todos os métodos."""
     # Etapa 5: retificação por homografia (opcional, com fallback)
     homo = None
     if caminho_homografia:
@@ -162,6 +201,9 @@ def main() -> None:
                         help="Caminho para homografia.json (opcional).")
     parser.add_argument("--calibracao", default=os.path.join(_DIR, "config", "calibracao_lab.json"),
                         help="Calibração LAB (para --segmentacao lab/superpixel).")
+    parser.add_argument("--calibracao-local",
+                        default=os.path.join(_DIR, "config", "calibracao_local.json"),
+                        help="Modelos de cor do local (para --metodo v2; tools/calibrar_cores.py).")
     parser.add_argument("--saida", default=os.path.join(_DIR, "output"),
                         help="Diretório de saída.")
     parser.add_argument("--largura", type=int, default=1200, help="Largura máxima em pixels.")
@@ -180,9 +222,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--metodo",
-        choices=["contorno", "watershed", "hough", "fourier", "shape_first"],
+        choices=["contorno", "watershed", "hough", "fourier", "shape_first", "v2"],
         default="watershed",
-        help="Método de detecção (padrão: watershed).",
+        help="Método de detecção (padrão: watershed; v2 = calibração local + multi-via + score).",
     )
     args = parser.parse_args()
 
@@ -193,6 +235,12 @@ def main() -> None:
     if segmentacao in ("lab", "superpixel") and os.path.exists(args.calibracao):
         calibracao_lab = _carregar_json(args.calibracao)
 
+    calibracao_local = None
+    if args.metodo == "v2":
+        if not os.path.exists(args.calibracao_local):
+            sys.exit(f"--metodo v2 exige {args.calibracao_local} — gere com tools/calibrar_cores.py.")
+        calibracao_local = _carregar_json(args.calibracao_local)
+
     print(f"[1-2/7] Carregando e pré-processando: {args.imagem}")
     print(f"[3/7]   Segmentação: {segmentacao} | [4/7] Detecção: {args.metodo}")
 
@@ -202,6 +250,7 @@ def main() -> None:
         largura=args.largura, usar_clahe=args.clahe, usar_wb=args.wb,
         kernel_blur=args.blur, caminho_homografia=args.homografia,
         eps=args.eps, calibracao_lab=calibracao_lab,
+        calibracao_local=calibracao_local,
         debug=args.debug, saida=args.saida,
     )
 

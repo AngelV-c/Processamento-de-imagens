@@ -54,14 +54,34 @@ def carregar_e_preprocessar(
     return hsv, bgr_original
 
 
-def _gray_world_white_balance(bgr: np.ndarray) -> np.ndarray:
-    """Aplica gray-world white balance simples."""
+def normalizar_iluminacao(bgr: np.ndarray) -> np.ndarray:
+    """Normalização de iluminação obrigatória do pipeline v2.
+
+    Gray-world white balance + CLAHE no canal V. Objetivo: fazer o resto do
+    pipeline ver imagens parecidas mesmo com câmeras/iluminações diferentes —
+    os limiares deixam de depender da cena.
+    """
+    bgr_wb = _gray_world_white_balance(bgr)
+    hsv = cv2.cvtColor(bgr_wb, cv2.COLOR_BGR2HSV)
+    hsv = _aplicar_clahe(hsv)
+    return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+
+
+def _gray_world_white_balance(bgr: np.ndarray, ganho_max: float = 1.25) -> np.ndarray:
+    """Gray-world white balance com ganhos limitados.
+
+    Sem o limite, cenas dominadas por uma cor quente (paredes creme) recebem
+    correções agressivas que distorcem os matizes dos objetos (rosa→violeta).
+    O clamp em [1/ganho_max, ganho_max] corrige o cast sem reescrever a cena.
+    """
     resultado = bgr.astype(np.float32)
     media_global = resultado.mean()
     for canal in range(3):
         media_canal = resultado[:, :, canal].mean()
         if media_canal > 0:
-            resultado[:, :, canal] *= media_global / media_canal
+            ganho = media_global / media_canal
+            ganho = min(max(ganho, 1.0 / ganho_max), ganho_max)
+            resultado[:, :, canal] *= ganho
     return np.clip(resultado, 0, 255).astype(np.uint8)
 
 

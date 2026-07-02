@@ -62,6 +62,43 @@ o módulo homônimo da biblioteca padrão do Python, que numpy/sklearn importam.
 pip install -r requirements.txt
 ```
 
+## Pipeline v2 (recomendado para locais novos)
+
+O método `--metodo v2` implementa a arquitetura reestruturada:
+
+1. **Calibração por local, não configuração fixa** — os modelos de cor vêm de
+   cliques em balões reais da cena (`tools/calibrar_cores.py`), não de faixas
+   HSV universais. Cores **acromáticas** (branco/prata) são detectadas
+   automaticamente e modeladas por brilho L + croma a-b — impossível por matiz.
+   Clique num balão perto E num longe da mesma cor: as amostras são fundidas.
+2. **Limiares relativos** — iluminação normalizada na entrada (gray-world com
+   ganhos limitados + CLAHE); pisos de S/V/L derivados dos percentis da
+   amostra; via de saturação usa percentil da distribuição da própria cena.
+3. **Score combinado** — `w1·circ + w2·solidity + w3·fourier + w4·conf_cor ≥
+   limiar único`, em vez da cascata de ANDs onde um candidato excelente em
+   4 métricas morre por 0.01 na quinta.
+4. **Candidatos multi-via** — (A) máscaras calibradas + watershed;
+   (B) HoughCircles, que vota com arcos e funciona sob oclusão parcial;
+   (C) saturação adaptativa + watershed. União deduplicada por distância.
+5. **Contexto de cena** — três priors de domínio configuráveis: faixa de
+   altura onde balões podem estar (`fracao_altura_min/max`), isolamento
+   (anel ao redor não pode ser da mesma cor) e razão de componente (pedaço
+   de teto vem de componente conexo gigante; balão não).
+
+```bash
+# 1. calibrar as cores da cena (headless: --amostra "cor:x,y:PROBLEMA")
+python tools/calibrar_cores.py --imagem foto_local.jpg --largura 1200 \
+    --amostra "vermelho:274,350:A" --amostra "branco:357,207:B"
+
+# 2. rodar
+python main.py --imagem foto_local.jpg --metodo v2 --largura 1200
+```
+
+Resultado na avaliação automática (`tools/avaliar.py --metodo v2`):
+v2 66% global vs 59% do baseline — com a diferença qualitativa de que o
+baseline conta rótulos errados como acerto (balões brancos detectados como
+"amarelo"), enquanto o v2 suporta branco como cor de verdade.
+
 ## Passo a passo de calibração (por local/câmera)
 
 Cada ginásio tem iluminação e câmera diferentes — **não existe configuração

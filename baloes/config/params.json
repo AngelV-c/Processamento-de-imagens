@@ -9,7 +9,11 @@
     "aspect_ratio_min": 0.5,
     "aspect_ratio_max": 1.5,
     "score_minimo": 0.75,
-    "score_pesos": {"circularidade": 0.4, "solidity": 0.4, "aspect_ratio": 0.2},
+    "score_pesos": {
+      "circularidade": 0.4,
+      "solidity": 0.4,
+      "aspect_ratio": 0.2
+    },
     "kernel_morfologia": 5
   },
   "segmentacao": {
@@ -31,6 +35,26 @@
     "eps_px_fallback": 100.0,
     "min_pts": 1,
     "_nota_min_pts": "min_pts=1 porque uma equipe pode ter um único balão; com min_pts>=2 esse balão viraria ruído e seria descartado. Com min_pts=1 o DBSCAN equivale a componentes conectados por distância eps."
+  },
+  "v2": {
+    "_comentario": "Pipeline reestruturado: calibração local + candidatos multi-via + score combinado. Requer config/calibracao_local.json (tools/calibrar_cores.py).",
+    "score_minimo": 0.75,
+    "pesos": {
+      "circularidade": 0.2,
+      "solidity": 0.15,
+      "fourier": 0.25,
+      "cor": 0.4
+    },
+    "conf_cor_minima": 0.3,
+    "conf_cor_minima_hough": 0.55,
+    "mahalanobis_max": 12.0,
+    "sat_percentil": 85,
+    "fracao_altura_max": 0.75,
+    "anel_mesma_cor_max": 0.4,
+    "meanshift_sp": 10,
+    "meanshift_sr": 20,
+    "componente_max_razao": 6.0,
+    "fracao_altura_min": 0.15
   },
   "hough": {
     "dp": 1.2,

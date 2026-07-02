@@ -81,10 +81,15 @@ _PAGINA = """
   <label>Detecção
     <select name="metodo">
       <option value="watershed" selected>watershed (recomendado)</option>
+      <option value="v2">v2 — calibração local + multi-via + score</option>
       <option value="fourier">watershed + Fourier</option>
       <option value="contorno">contorno simples</option>
       <option value="shape_first">forma primeiro, cor depois</option>
     </select>
+  </label>
+  <label>Calibração local (só p/ v2)
+    <input type="text" name="calibracao_local" value="config/calibracao_local.json"
+           placeholder="config/calibracoes/MinhaCena.json">
   </label>
   <label>Largura máx (px)
     <input type="number" name="largura" value="1200" min="400" max="4000">
@@ -180,16 +185,32 @@ def processar():
     )
 
     eps_txt = request.form.get("eps", "").strip()
+    metodo = request.form.get("metodo", "watershed")
+
+    calibracao_local = None
+    if metodo == "v2":
+        caminho_calib = request.form.get("calibracao_local", "").strip() or "config/calibracao_local.json"
+        if not os.path.isabs(caminho_calib):
+            caminho_calib = os.path.join(_DIR, caminho_calib)
+        if not os.path.exists(caminho_calib):
+            return render_template_string(
+                _PAGINA, overlay=None, avisos=[],
+                erro=f"Método v2 exige calibração local — não encontrei {caminho_calib}. "
+                     "Gere com tools/calibrar_cores.py.")
+        with open(caminho_calib, encoding="utf-8") as f:
+            calibracao_local = json.load(f)
+
     try:
         resultado = executar_pipeline(
             caminho, config,
             segmentacao=request.form.get("segmentacao", "meanshift"),
-            metodo=request.form.get("metodo", "watershed"),
+            metodo=metodo,
             largura=int(request.form.get("largura", 1200)),
             usar_clahe="clahe" in request.form,
             usar_wb="wb" in request.form,
             caminho_homografia=os.path.join(_DIR, "config", "homografia.json"),
             eps=float(eps_txt) if eps_txt else None,
+            calibracao_local=calibracao_local,
         )
     except Exception as exc:  # superfície de erro única da UI
         return render_template_string(_PAGINA, overlay=None, avisos=[],
