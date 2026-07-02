@@ -18,29 +18,9 @@ que passariam pelo filtro de circularidade isolado.
 import math
 import cv2
 import numpy as np
-from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
-
-@dataclass
-class Deteccao:
-    """Representa um balão detectado na imagem.
-
-    Atributos:
-        cor: Nome da cor conforme definido em cores.json.
-        cx: Coordenada x do centroide em pixels.
-        cy: Coordenada y do centroide em pixels.
-        area: Área do contorno em pixels².
-        circularidade: Métrica 4π·A/P² no intervalo (0, 1].
-        raio: Raio aproximado do balão em pixels.
-    """
-
-    cor: str
-    cx: float
-    cy: float
-    area: float
-    circularidade: float
-    raio: float
+from tipos import Deteccao  # re-export: módulos antigos importam Deteccao daqui
 
 
 def _calcular_circularidade(area: float, perimetro: float) -> float:
@@ -65,13 +45,50 @@ def _metricas_forma(contorno: np.ndarray) -> Tuple[float, float, float]:
     return circularidade, solidity, aspect_ratio
 
 
+def _score_forma(
+    circularidade: float,
+    solidity: float,
+    aspect_ratio: float,
+    cfg: dict,
+) -> float:
+    """Score contínuo [0,1] combinando as três métricas de forma.
+
+    Diferente da cascata rígida, um candidato excelente em duas métricas
+    pode compensar uma terceira ligeiramente abaixo do limiar — evita que
+    um balão real morra por 0.01 numa única porta.
+    """
+    pesos = cfg.get("score_pesos", {"circularidade": 0.4, "solidity": 0.4, "aspect_ratio": 0.2})
+
+    ar_min = cfg["aspect_ratio_min"]
+    ar_max = cfg["aspect_ratio_max"]
+    if ar_min <= aspect_ratio <= ar_max:
+        ar_score = 1.0
+    else:
+        desvio = min(abs(aspect_ratio - ar_min), abs(aspect_ratio - ar_max))
+        ar_score = max(0.0, 1.0 - 2.0 * desvio)
+
+    return (
+        pesos["circularidade"] * circularidade
+        + pesos["solidity"] * solidity
+        + pesos["aspect_ratio"] * ar_score
+    )
+
+
 def _forma_de_balao(
     circularidade: float,
     solidity: float,
     aspect_ratio: float,
     cfg: dict,
 ) -> bool:
-    """Retorna True se as métricas são compatíveis com a forma de um balão."""
+    """Retorna True se as métricas são compatíveis com a forma de um balão.
+
+    Dois modos, escolhidos por cfg["modo_filtro"]:
+      "rigido" (padrão) — cascata de limiares AND (comportamento clássico).
+      "score"           — soma ponderada; aceita se score >= score_minimo.
+    """
+    if cfg.get("modo_filtro", "rigido") == "score":
+        return _score_forma(circularidade, solidity, aspect_ratio, cfg) >= cfg.get("score_minimo", 0.75)
+
     return (
         circularidade >= cfg["circularidade_minima"]
         and solidity >= cfg["solidity_minima"]

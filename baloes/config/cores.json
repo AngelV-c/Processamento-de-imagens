@@ -1,8 +1,9 @@
 {
-  "_comentario": "Faixas HSV para detecção de balões. A laranja das mesas NÃO está aqui — veja README.",
+  "_comentario": "Faixas HSV das cores de balão + letra do problema correspondente. A LARANJA é a cor das mesas — cor RESERVADA, nunca entra aqui (veja README). OpenCV: H 0-179, S 0-255, V 0-255. O vermelho ocupa as duas pontas do matiz circular, por isso tem duas faixas combinadas com OR.",
   "cores": [
     {
       "nome": "vermelho",
+      "problema": "A",
       "faixas": [
         {"lower": [0,   120, 70], "upper": [10,  255, 255]},
         {"lower": [167, 100, 70], "upper": [179, 255, 255]}
@@ -10,24 +11,28 @@
     },
     {
       "nome": "amarelo",
+      "problema": "B",
       "faixas": [
         {"lower": [20, 120, 100], "upper": [35, 255, 255]}
       ]
     },
     {
       "nome": "verde",
+      "problema": "C",
       "faixas": [
         {"lower": [36, 80, 60], "upper": [90, 255, 255]}
       ]
     },
     {
       "nome": "azul",
+      "problema": "D",
       "faixas": [
         {"lower": [95, 60, 30], "upper": [135, 255, 255]}
       ]
     },
     {
       "nome": "rosa",
+      "problema": "E",
       "faixas": [
         {"lower": [140, 30, 80], "upper": [166, 255, 255]},
         {"lower": [167, 30, 80], "upper": [175,  95, 255]}
@@ -35,47 +40,17 @@
     },
     {
       "nome": "ciano",
+      "problema": "F",
       "faixas": [
         {"lower": [80, 100, 100], "upper": [94, 255, 255]}
       ]
     },
     {
       "nome": "roxo",
+      "problema": "G",
       "faixas": [
         {"lower": [125, 60, 60], "upper": [150, 255, 255]}
       ]
-    },
-    {
-      "nome": "laranja",
-      "faixas": [
-        {"lower": [11, 180, 100], "upper": [19, 255, 255]}
-      ]
     }
-  ],
-  "deteccao": {
-    "area_minima_relativa": 0.00012,
-    "area_maxima_relativa": 0.15,
-    "circularidade_minima": 0.5,
-    "solidity_minima": 0.85,
-    "aspect_ratio_min": 0.5,
-    "aspect_ratio_max": 1.5,
-    "kernel_morfologia": 5
-  },
-  "watershed": {
-    "kernel_maximos": 13,
-    "limiar_distancia": 0.25
-  },
-  "fourier": {
-    "limiar_energia_baixa": 0.45,
-    "n_amostras": 64,
-    "k_harmonicos_baixos": 4
-  },
-  "hough": {
-    "dp": 1.2,
-    "param1": 120,
-    "param2": 45,
-    "min_dist_relativa": 0.06,
-    "fracao_interna": 0.55,
-    "limiar_cobertura_cor": 0.35
-  }
+  ]
 }

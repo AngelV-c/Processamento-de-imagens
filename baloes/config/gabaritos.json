@@ -1,0 +1,9 @@
+{
+  "_comentario": "Ground truth por imagem de teste. 'total' é obrigatório; 'cores' é opcional (preencha quando souber a contagem real por cor). Usado por tools/avaliar.py para medir o pipeline contra TODAS as imagens de uma vez — evita otimizar para uma foto e quebrar as outras.",
+  "Foto_Teste_2.jpeg": {
+    "total": 19
+  },
+  "Teste_3.jpg": {
+    "total": 25
+  }
+}

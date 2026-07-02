@@ -1,0 +1,43 @@
+{
+  "_comentario": "Parâmetros do pipeline. Unidades: áreas relativas ao total de pixels da imagem; eps do agrupamento em CM se houver homografia calibrada, senão em PIXELS (ver agrupamento.eps_px_fallback).",
+  "deteccao": {
+    "area_minima_relativa": 0.00012,
+    "area_maxima_relativa": 0.15,
+    "modo_filtro": "rigido",
+    "circularidade_minima": 0.5,
+    "solidity_minima": 0.85,
+    "aspect_ratio_min": 0.5,
+    "aspect_ratio_max": 1.5,
+    "score_minimo": 0.75,
+    "score_pesos": {"circularidade": 0.4, "solidity": 0.4, "aspect_ratio": 0.2},
+    "kernel_morfologia": 5
+  },
+  "segmentacao": {
+    "metodo_padrao": "meanshift",
+    "meanshift_spatial_radius": 21,
+    "meanshift_color_radius": 25
+  },
+  "watershed": {
+    "kernel_maximos": 13,
+    "limiar_distancia": 0.25
+  },
+  "fourier": {
+    "limiar_energia_baixa": 0.45,
+    "n_amostras": 64,
+    "k_harmonicos_baixos": 4
+  },
+  "agrupamento": {
+    "eps_cm": 60.0,
+    "eps_px_fallback": 100.0,
+    "min_pts": 1,
+    "_nota_min_pts": "min_pts=1 porque uma equipe pode ter um único balão; com min_pts>=2 esse balão viraria ruído e seria descartado. Com min_pts=1 o DBSCAN equivale a componentes conectados por distância eps."
+  },
+  "hough": {
+    "dp": 1.2,
+    "param1": 120,
+    "param2": 45,
+    "min_dist_relativa": 0.06,
+    "fracao_interna": 0.55,
+    "limiar_cobertura_cor": 0.35
+  }
+}

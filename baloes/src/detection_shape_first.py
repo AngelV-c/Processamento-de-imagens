@@ -189,12 +189,7 @@ def detectar_baloes_shape_first(
     kt = cfg["kernel_morfologia"]
     cores_config = config["cores"]
 
-    # Máscara de candidatos: OR entre faixas HSV por cor (preciso, alta S)
-    # e threshold de saturação puro (amplo, captura balões com S baixa).
-    # A classificação por matiz filtra falsos positivos do segundo.
-    mascara_hsv  = _mascara_unificada(hsv, cores_config, kt)
-    mascara_sat  = _mascara_candidatos(hsv, sat_min=50, val_min=40, kernel_tam=kt)
-    mascara = cv2.bitwise_or(mascara_hsv, mascara_sat)
+    mascara = _mascara_unificada(hsv, cores_config, kt)
 
     labels = _watershed_mascara(mascara, kernel_maximos, limiar_distancia)
     n_labels = labels.max()
