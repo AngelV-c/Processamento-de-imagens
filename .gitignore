@@ -1,0 +1,4 @@
+baloes/output/
+__pycache__/
+*.pyc
+*.pyo
