@@ -1,0 +1,35 @@
+{
+  "_comentario": "Parâmetros do pipeline. Sem valores mágicos no código: tudo vem daqui. Áreas relativas ao total de pixels; eps em CM com homografia calibrada, senão em PIXELS.",
+  "deteccao": {
+    "area_minima_relativa": 0.00012,
+    "area_maxima_relativa": 0.15,
+    "score_minimo": 0.75,
+    "pesos": {"circularidade": 0.2, "solidity": 0.15, "fourier": 0.25, "cor": 0.4},
+    "conf_cor_minima": 0.30,
+    "conf_cor_minima_hough": 0.55,
+    "sat_percentil": 85,
+    "fracao_altura_min": 0.15,
+    "fracao_altura_max": 0.75,
+    "anel_mesma_cor_max": 0.40,
+    "componente_max_razao": 6.0,
+    "kernel_morfologia": 5,
+    "meanshift_sp": 10,
+    "meanshift_sr": 20
+  },
+  "watershed": {
+    "kernel_maximos": 13,
+    "limiar_distancia": 0.25
+  },
+  "hough": {
+    "dp": 1.2,
+    "param1": 120,
+    "param2": 45,
+    "min_dist_relativa": 0.06
+  },
+  "agrupamento": {
+    "eps_cm": 60.0,
+    "eps_px_fallback": 100.0,
+    "min_pts": 1,
+    "_nota_min_pts": "min_pts=1: equipe com um único balão não pode virar 'ruído' do DBSCAN."
+  }
+}
