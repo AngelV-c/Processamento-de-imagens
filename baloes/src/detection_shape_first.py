@@ -59,26 +59,27 @@ def _classificar_cor(
 ) -> Optional[str]:
     """Classifica a cor dominante dentro de uma região.
 
-    Para cada cor em cores.json, conta quantos pixels da região
-    caem dentro das faixas HSV. A cor com mais pixels vence.
+    Tenta primeiro por faixas HSV completas (H+S+V). Se nenhuma cor
+    atingir fracao_min, tenta classificar só pelo matiz mediano (H),
+    ignorando saturação e valor — robusto a variações de iluminação
+    entre imagens diferentes.
 
     Args:
         regiao_mask: Máscara binária da região (255 = interior do balão).
         hsv: Imagem HSV completa.
         cores_config: Lista de cores de config["cores"].
-        fracao_min: Fração mínima de pixels para aceitar a cor vencedora.
-            Regiões onde nenhuma cor domina são rejeitadas.
+        fracao_min: Fração mínima de pixels para aceitar via HSV completo.
 
     Returns:
-        Nome da cor dominante ou None se nenhuma cor dominar.
+        Nome da cor dominante ou None se o matiz não mapear a nenhuma cor.
     """
     n_total = int((regiao_mask > 0).sum())
     if n_total == 0:
         return None
 
+    # --- Tentativa 1: faixas HSV completas (H+S+V) ---
     melhor_nome = None
     melhor_contagem = 0
-
     for cor in cores_config:
         contagem = 0
         for faixa in cor["faixas"]:
@@ -88,15 +89,32 @@ def _classificar_cor(
                 np.array(faixa["upper"], dtype=np.uint8),
             )
             contagem += int(cv2.bitwise_and(m, regiao_mask).sum() // 255)
-
         if contagem > melhor_contagem:
             melhor_contagem = contagem
             melhor_nome = cor["nome"]
 
-    if melhor_nome is None or melhor_contagem / n_total < fracao_min:
-        return None
+    if melhor_nome is not None and melhor_contagem / n_total >= fracao_min:
+        return melhor_nome
 
-    return melhor_nome
+    # --- Tentativa 2: só matiz mediano (robusto a iluminação) ---
+    pixels_h = hsv[:, :, 0][regiao_mask > 0].astype(np.float32)
+    if len(pixels_h) == 0:
+        return None
+    h_med = float(np.median(pixels_h))
+
+    # Faixas de matiz por cor (só H, independente de S/V)
+    # Cada entrada: (nome, lista de (h_low, h_high))
+    FAIXAS_H = []
+    for cor in cores_config:
+        intervalos = [(f["lower"][0], f["upper"][0]) for f in cor["faixas"]]
+        FAIXAS_H.append((cor["nome"], intervalos))
+
+    for nome, intervalos in FAIXAS_H:
+        for h_low, h_high in intervalos:
+            if h_low <= h_med <= h_high:
+                return nome
+
+    return None
 
 
 def _mascara_unificada(
@@ -170,7 +188,13 @@ def detectar_baloes_shape_first(
 
     kt = cfg["kernel_morfologia"]
     cores_config = config["cores"]
-    mascara = _mascara_unificada(hsv, cores_config, kt)
+
+    # Máscara de candidatos: OR entre faixas HSV por cor (preciso, alta S)
+    # e threshold de saturação puro (amplo, captura balões com S baixa).
+    # A classificação por matiz filtra falsos positivos do segundo.
+    mascara_hsv  = _mascara_unificada(hsv, cores_config, kt)
+    mascara_sat  = _mascara_candidatos(hsv, sat_min=50, val_min=40, kernel_tam=kt)
+    mascara = cv2.bitwise_or(mascara_hsv, mascara_sat)
 
     labels = _watershed_mascara(mascara, kernel_maximos, limiar_distancia)
     n_labels = labels.max()
