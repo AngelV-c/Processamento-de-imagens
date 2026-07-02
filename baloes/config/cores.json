@@ -65,6 +65,11 @@
     "kernel_maximos": 13,
     "limiar_distancia": 0.25
   },
+  "fourier": {
+    "limiar_energia_baixa": 0.45,
+    "n_amostras": 64,
+    "k_harmonicos_baixos": 4
+  },
   "hough": {
     "dp": 1.2,
     "param1": 120,

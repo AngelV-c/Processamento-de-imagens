@@ -16,6 +16,7 @@ from segmentation_superpixel import segmentar_cores_superpixel
 from detection import detectar_baloes
 from detection_hough import detectar_baloes_hough
 from detection_watershed import detectar_baloes_watershed
+from detection_fourier import detectar_baloes_fourier
 from visualize import desenhar_deteccoes, salvar_resultados
 
 _DIR = os.path.dirname(__file__)
@@ -70,13 +71,14 @@ def main() -> None:
     )
     parser.add_argument(
         "--metodo",
-        choices=["contorno", "watershed", "hough"],
+        choices=["contorno", "watershed", "hough", "fourier"],
         default="contorno",
         help=(
             "Método de detecção:\n"
             "  contorno   — contorno + circularidade na máscara (padrão)\n"
             "  watershed  — separa balões sobrepostos com watershed\n"
-            "  hough      — HoughCircles + classificação de cor por amostragem"
+            "  hough      — HoughCircles + classificação de cor por amostragem\n"
+            "  fourier    — watershed + filtro por Descritores de Fourier"
         ),
     )
     args = parser.parse_args()
@@ -109,6 +111,8 @@ def main() -> None:
         deteccoes = detectar_baloes(bgr_original, config, mascaras)
     elif args.metodo == "watershed":
         deteccoes = detectar_baloes_watershed(bgr_original, mascaras, config)
+    elif args.metodo == "fourier":
+        deteccoes = detectar_baloes_fourier(bgr_original, mascaras, config)
     else:
         deteccoes = detectar_baloes_hough(bgr_original, hsv, config)
 
