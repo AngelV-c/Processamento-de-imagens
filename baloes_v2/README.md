@@ -60,7 +60,13 @@ pip install -r requirements.txt
 ```bash
 python app.py            # abra http://localhost:5000
 ```
-Envie a foto, escolha a calibração da cena no menu e clique Processar.
+Duas abas:
+- **🎯 Detectar** — envie a foto e ajuste **todos** os parâmetros do pipeline
+  em sliders/campos (score e pesos, vias de candidatos ligáveis, priors de
+  domínio, watershed, Hough e os 14 ajustes finos do modelo de cor).
+- **🎨 Calibrar cores** — clique nos balões direto no navegador (sem janela
+  do OpenCV): escolha o nome da cor e a letra do problema, clique num balão
+  perto e num longe de cada cor, salve — a calibração aparece na aba Detectar.
 
 **Linha de comando (imagens de teste, calibrações prontas):**
 ```bash
@@ -97,8 +103,15 @@ execução — as coordenadas dos cliques são relativas à imagem redimensionad
 ## Validação
 
 ```bash
-python tools/avaliar.py
+python tools/avaliar.py      # contagens + precisão/recall por posição anotada
+python tools/busca_grade.py --grade '{"deteccao.score_minimo": [0.65, 0.75, 0.85]}'
+python main.py --imagem foto.jpg --set deteccao.score_minimo=0.7   # override pontual
 ```
+
+O gabarito (`config/gabaritos.json`) aceita posições anotadas
+(`"baloes": [{"x","y","cor"}]`) — aí o avaliador casa cada detecção com o
+balão real mais próximo e reporta precisão, recall, acurácia de cor e a
+lista nominal de falsos positivos e balões perdidos.
 
 | Imagem | Pipeline antigo | Este pipeline |
 |---|---|---|

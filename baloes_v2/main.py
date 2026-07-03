@@ -102,6 +102,9 @@ def main() -> None:
                         help="Raio do DBSCAN (cm com homografia, px sem).")
     parser.add_argument("--debug", action="store_true",
                         help="Salva máscaras por cor e vista retificada.")
+    parser.add_argument("--set", action="append", default=[], metavar="CHAVE=VALOR",
+                        help="Sobrescreve qualquer parâmetro, ex.: "
+                             "--set deteccao.score_minimo=0.7 (repetível).")
     args = parser.parse_args()
 
     if not os.path.exists(args.calibracao):
@@ -110,6 +113,18 @@ def main() -> None:
 
     params = _json(args.params)
     calibracao = _json(args.calibracao)
+
+    # Overrides de linha de comando: --set deteccao.score_minimo=0.7
+    for override in args.set:
+        chave, valor = override.split("=", 1)
+        alvo = params
+        partes = chave.split(".")
+        for parte in partes[:-1]:
+            alvo = alvo.setdefault(parte, {})
+        try:
+            alvo[partes[-1]] = json.loads(valor)
+        except json.JSONDecodeError:
+            alvo[partes[-1]] = valor
 
     print(f"[1-4/7] Detectando em {args.imagem} "
           f"(calibração: {os.path.basename(args.calibracao)})")

@@ -96,6 +96,11 @@ def detectar_baloes(imagem_bgr: np.ndarray, params: dict,
     det = params["deteccao"]
     pesos = det["pesos"]
     ws = params["watershed"]
+    ajustes = params.get("modelo")  # ajustes finos do casamento de cor
+    vias = det.get("vias", {})
+    usar_a = vias.get("mascaras", True)
+    usar_b = vias.get("hough", True)
+    usar_c = vias.get("saturacao", True)
 
     altura, largura = imagem_bgr.shape[:2]
     area_total = altura * largura
@@ -108,25 +113,28 @@ def detectar_baloes(imagem_bgr: np.ndarray, params: dict,
     lab = cv2.cvtColor(bgr_ms, cv2.COLOR_BGR2LAB).astype(np.float64)
 
     modelos = calibracao["cores"]
-    mascaras = mascaras_calibradas(hsv, lab, modelos, det["kernel_morfologia"])
+    mascaras = mascaras_calibradas(hsv, lab, modelos, det["kernel_morfologia"], ajustes)
 
-    # --- Candidatos pelas três vias ---
+    # --- Candidatos pelas vias habilitadas ---
     candidatos: list[dict] = []
-    for nome, mascara in mascaras.items():
+    if usar_a:
+        for nome, mascara in mascaras.items():
+            for contorno, comp_area in candidatos_de_mascara(
+                    mascara, ws["kernel_maximos"], ws["limiar_distancia"]):
+                candidatos.append({"contorno": contorno, "via": "A", "comp_area": comp_area})
+
+    if usar_c:
+        m_sat = _mascara_saturacao_adaptativa(hsv, det["sat_percentil"], det["kernel_morfologia"])
         for contorno, comp_area in candidatos_de_mascara(
-                mascara, ws["kernel_maximos"], ws["limiar_distancia"]):
-            candidatos.append({"contorno": contorno, "via": "A", "comp_area": comp_area})
+                m_sat, ws["kernel_maximos"], ws["limiar_distancia"]):
+            candidatos.append({"contorno": contorno, "via": "C", "comp_area": comp_area})
 
-    m_sat = _mascara_saturacao_adaptativa(hsv, det["sat_percentil"], det["kernel_morfologia"])
-    for contorno, comp_area in candidatos_de_mascara(
-            m_sat, ws["kernel_maximos"], ws["limiar_distancia"]):
-        candidatos.append({"contorno": contorno, "via": "C", "comp_area": comp_area})
-
-    for cx, cy, r in _candidatos_hough(bgr_norm, params["hough"], area_min, area_max):
-        angulos = np.linspace(0, 2 * math.pi, 32, endpoint=False)
-        pts = np.stack([cx + r * np.cos(angulos), cy + r * np.sin(angulos)], axis=1)
-        candidatos.append({"contorno": pts.reshape(-1, 1, 2).astype(np.int32),
-                           "via": "B", "comp_area": None})
+    if usar_b:
+        for cx, cy, r in _candidatos_hough(bgr_norm, params["hough"], area_min, area_max):
+            angulos = np.linspace(0, 2 * math.pi, 32, endpoint=False)
+            pts = np.stack([cx + r * np.cos(angulos), cy + r * np.sin(angulos)], axis=1)
+            candidatos.append({"contorno": pts.reshape(-1, 1, 2).astype(np.int32),
+                               "via": "B", "comp_area": None})
 
     # --- Priors de domínio + score combinado ---
     cy_min = det["fracao_altura_min"] * altura
@@ -162,7 +170,7 @@ def detectar_baloes(imagem_bgr: np.ndarray, params: dict,
             cv2.MORPH_ELLIPSE, (max(3, int(raio * 0.2)),) * 2))
         sel = (interno if cv2.countNonZero(interno) > 20 else regiao) > 0
 
-        cor, conf = classificar_regiao(sel, hsv, lab, modelos)
+        cor, conf = classificar_regiao(sel, hsv, lab, modelos, ajustes)
         # Círculo sintético do Hough tem forma perfeita por construção —
         # a cor é o único portão real da via B, e por isso exige mais.
         conf_necessaria = (det["conf_cor_minima_hough"] if cand["via"] == "B"

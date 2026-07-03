@@ -14,7 +14,25 @@
     "componente_max_razao": 6.0,
     "kernel_morfologia": 5,
     "meanshift_sp": 10,
-    "meanshift_sr": 20
+    "meanshift_sr": 20,
+    "vias": {"mascaras": true, "hough": true, "saturacao": true}
+  },
+  "modelo": {
+    "_comentario": "Ajustes finos do casamento de cor com os modelos calibrados.",
+    "s_piso_fator": 0.5,
+    "s_piso_min": 30.0,
+    "v_piso_fator": 0.5,
+    "v_piso_min": 30.0,
+    "ab_tol_min": 15.0,
+    "ab_tol_max": 30.0,
+    "ab_tol_min_acrom": 8.0,
+    "ab_tol_max_acrom": 15.0,
+    "s_teto_fator": 1.2,
+    "s_teto_min": 50.0,
+    "v_piso_acrom_fator": 0.75,
+    "l_piso_fator": 0.9,
+    "l_teto_fator": 1.08,
+    "v_glare_max": 250.0
   },
   "watershed": {
     "kernel_maximos": 13,

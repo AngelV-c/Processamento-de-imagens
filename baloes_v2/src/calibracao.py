@@ -102,39 +102,62 @@ def _dist_h_circular(h: np.ndarray, h_ref: float) -> np.ndarray:
     return np.minimum(d, 180.0 - d)
 
 
-def casar_modelo(hsv: np.ndarray, lab: np.ndarray, modelo: dict) -> np.ndarray:
+# Ajustes de casamento — todos os fatores/pisos são calibráveis via
+# params.json (seção "modelo"); estes são apenas os padrões.
+AJUSTES_PADRAO = {
+    "s_piso_fator": 0.5,        # piso de S = fator × s_p10 da amostra
+    "s_piso_min": 30.0,         # nunca abaixo disso (ruído de fundo)
+    "v_piso_fator": 0.5,
+    "v_piso_min": 30.0,
+    "ab_tol_min": 15.0,         # cromática: janela a-b mínima/máxima
+    "ab_tol_max": 30.0,
+    "ab_tol_min_acrom": 8.0,    # acromática: janela a-b apertada
+    "ab_tol_max_acrom": 15.0,
+    "s_teto_fator": 1.2,        # acromática: teto de S = fator × s_p90
+    "s_teto_min": 50.0,
+    "v_piso_acrom_fator": 0.75,
+    "l_piso_fator": 0.9,        # separa balão branco de teto/camiseta
+    "l_teto_fator": 1.08,       # separa balão branco de luminária
+    "v_glare_max": 250.0,       # corte absoluto de pixels estourados
+}
+
+
+def casar_modelo(hsv: np.ndarray, lab: np.ndarray, modelo: dict,
+                 ajustes: dict | None = None) -> np.ndarray:
     """Máscara booleana dos pixels compatíveis com um modelo de cor."""
+    aj = {**AJUSTES_PADRAO, **(ajustes or {})}
     h = hsv[:, :, 0].astype(np.float64)
     s = hsv[:, :, 1].astype(np.float64)
     v = hsv[:, :, 2].astype(np.float64)
     media = modelo["lab_media"]
     cov = modelo["lab_cov"]
     dist_ab = np.sqrt((lab[:, :, 1] - media[1]) ** 2 + (lab[:, :, 2] - media[2]) ** 2)
+    disp_ab = 2.5 * math.sqrt(cov[1][1] + cov[2][2])
 
     if modelo["acromatica"]:
-        ab_tol = max(8.0, min(15.0, 2.5 * math.sqrt(cov[1][1] + cov[2][2])))
-        s_teto = max(50.0, modelo["s_p90"] * 1.2)
-        v_piso = modelo["v_p10"] * 0.75
-        l_piso = modelo["l_p10"] * 0.9
-        l_teto = modelo["l_p90"] * 1.08
+        ab_tol = max(aj["ab_tol_min_acrom"], min(aj["ab_tol_max_acrom"], disp_ab))
+        s_teto = max(aj["s_teto_min"], modelo["s_p90"] * aj["s_teto_fator"])
+        v_piso = modelo["v_p10"] * aj["v_piso_acrom_fator"]
+        l_piso = modelo["l_p10"] * aj["l_piso_fator"]
+        l_teto = modelo["l_p90"] * aj["l_teto_fator"]
         L = lab[:, :, 0]
         return ((dist_ab <= ab_tol) & (s <= s_teto) & (v >= v_piso)
-                & (v <= 250) & (L >= l_piso) & (L <= l_teto))
+                & (v <= aj["v_glare_max"]) & (L >= l_piso) & (L <= l_teto))
 
     dh = _dist_h_circular(h, modelo["h_mediana"])
-    s_piso = max(30.0, modelo["s_p10"] * 0.5)
-    v_piso = max(30.0, modelo["v_p10"] * 0.5)
-    ab_tol = max(15.0, min(30.0, 2.5 * math.sqrt(cov[1][1] + cov[2][2])))
+    s_piso = max(aj["s_piso_min"], modelo["s_p10"] * aj["s_piso_fator"])
+    v_piso = max(aj["v_piso_min"], modelo["v_p10"] * aj["v_piso_fator"])
+    ab_tol = max(aj["ab_tol_min"], min(aj["ab_tol_max"], disp_ab))
     return (dh <= modelo["h_tolerancia"]) & (s >= s_piso) & (v >= v_piso) & (dist_ab <= ab_tol)
 
 
 def mascaras_calibradas(hsv: np.ndarray, lab: np.ndarray, modelos: dict,
-                        kernel_tam: int = 5) -> dict:
+                        kernel_tam: int = 5, ajustes: dict | None = None) -> dict:
     """Uma máscara binária limpa (abertura+fechamento) por cor calibrada."""
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_tam, kernel_tam))
     mascaras = {}
     for nome, modelo in modelos.items():
-        m = (casar_modelo(hsv, lab, modelo) * 255).astype(np.uint8)
+        m = (casar_modelo(hsv, lab, modelo, ajustes) * 255).astype(np.uint8)
         m = cv2.morphologyEx(m, cv2.MORPH_OPEN, kernel)
         m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, kernel)
         mascaras[nome] = m
@@ -142,7 +165,8 @@ def mascaras_calibradas(hsv: np.ndarray, lab: np.ndarray, modelos: dict,
 
 
 def classificar_regiao(regiao_sel: np.ndarray, hsv: np.ndarray, lab: np.ndarray,
-                       modelos: dict) -> tuple[str | None, float]:
+                       modelos: dict,
+                       ajustes: dict | None = None) -> tuple[str | None, float]:
     """(cor, confiança): cor com maior fração de pixels compatíveis na região.
 
     Empates próximos (diferença < 0.10) são desfeitos pela distância no plano
@@ -155,7 +179,7 @@ def classificar_regiao(regiao_sel: np.ndarray, hsv: np.ndarray, lab: np.ndarray,
 
     fracoes: list[tuple[float, str]] = []
     for nome, modelo in modelos.items():
-        match = casar_modelo(hsv, lab, modelo)
+        match = casar_modelo(hsv, lab, modelo, ajustes)
         frac = float((match & regiao_sel).sum()) / n_total
         fracoes.append((frac, nome))
     fracoes.sort(reverse=True)
