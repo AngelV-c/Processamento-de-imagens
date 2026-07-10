@@ -1,0 +1,28 @@
+{
+  "_comentario": "Ground truth por imagem: 'total' obrigatório; 'cores' contagens confirmadas; 'baloes' posições anotadas (x,y na imagem com largura 1200) para precisão/recall — 'parcial': true indica que nem todos os balões foram anotados; 'calibracao' aponta a calibração da cena.",
+  "Foto_Teste_2.jpeg": {
+    "total": 19,
+    "calibracao": "config/calibracoes/Foto_Teste_2.json"
+  },
+  "Teste_3.jpg": {
+    "total": 25,
+    "cores": {"amarelo": 1, "verde": 1},
+    "parcial": true,
+    "_nota": "12 posições confirmadas visualmente de 25; rosa pálido vs branco quente é ambíguo à distância.",
+    "baloes": [
+      {"x": 52,  "y": 286, "cor": "amarelo"},
+      {"x": 233, "y": 294, "cor": "verde"},
+      {"x": 370, "y": 138, "cor": "rosa"},
+      {"x": 357, "y": 207, "cor": "branco"},
+      {"x": 580, "y": 248, "cor": "rosa"},
+      {"x": 482, "y": 266, "cor": "rosa"},
+      {"x": 521, "y": 273, "cor": "branco"},
+      {"x": 478, "y": 295, "cor": "branco"},
+      {"x": 7,   "y": 203, "cor": "rosa"},
+      {"x": 151, "y": 286, "cor": "rosa"},
+      {"x": 585, "y": 302, "cor": "branco"},
+      {"x": 298, "y": 249, "cor": "rosa"}
+    ],
+    "calibracao": "config/calibracoes/Teste_3.json"
+  }
+}

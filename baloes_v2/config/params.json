@@ -1,0 +1,63 @@
+{
+  "_comentario": "Parâmetros do pipeline. Sem valores mágicos no código: tudo vem daqui. Áreas relativas ao total de pixels; eps em CM com homografia calibrada, senão em PIXELS.",
+  "deteccao": {
+    "area_minima_relativa": 0.00012,
+    "area_maxima_relativa": 0.15,
+    "score_minimo": 0.75,
+    "pesos": {"circularidade": 0.2, "solidity": 0.15, "fourier": 0.25, "cor": 0.4, "brilho": 0.05},
+    "conf_cor_minima": 0.30,
+    "conf_cor_minima_hough": 0.55,
+    "sat_percentil": 85,
+    "fracao_altura_min": 0.15,
+    "fracao_altura_max": 0.75,
+    "anel_mesma_cor_max": 0.40,
+    "componente_max_razao": 6.0,
+    "kernel_morfologia": 5,
+    "meanshift_sp": 10,
+    "meanshift_sr": 20,
+    "vias": {"mascaras": true, "arcos": true, "mser": true}
+  },
+  "arcos": {
+    "_comentario": "Via B — círculos por segmentos de arco (família EDCircles): Canny → ajuste de Kåsa → validação por resíduo e cobertura angular.",
+    "canny_baixo": 80,
+    "canny_alto": 160,
+    "comprimento_min": 25,
+    "residuo_max": 2.0,
+    "cobertura_min_graus": 70.0
+  },
+  "mser": {
+    "_comentario": "Via C — MSER (regiões maximamente estáveis) nos canais S e L.",
+    "delta": 8,
+    "max_variation": 0.5
+  },
+  "modelo": {
+    "_comentario": "Ajustes finos do casamento de cor com os modelos calibrados.",
+    "s_piso_fator": 0.5,
+    "s_piso_min": 30.0,
+    "v_piso_fator": 0.5,
+    "v_piso_min": 30.0,
+    "ab_tol_min": 15.0,
+    "ab_tol_max": 30.0,
+    "ab_tol_min_acrom": 8.0,
+    "ab_tol_max_acrom": 15.0,
+    "s_teto_fator": 1.2,
+    "s_teto_min": 50.0,
+    "v_piso_acrom_fator": 0.75,
+    "l_piso_fator": 0.9,
+    "l_teto_fator": 1.08,
+    "v_glare_max": 250.0
+  },
+  "watershed": {
+    "kernel_maximos": 13,
+    "limiar_distancia": 0.25
+  },
+  "agrupamento": {
+    "eps_cm": 60.0,
+    "eps_px_fallback": 100.0,
+    "min_pts": 1,
+    "fator_reducao": 0.75,
+    "eps_min_relativo": 0.35,
+    "_nota_min_pts": "min_pts=1: equipe com um único balão não pode virar 'ruído' do DBSCAN.",
+    "_nota_restricao": "Regra da maratona: um balão por cor por equipe. Cluster com cor duplicada é re-separado com eps*fator_reducao até eps_min_relativo*eps; se não separar, a duplicata de menor score é descartada."
+  }
+}
