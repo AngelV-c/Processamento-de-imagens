@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Detector no Navegador — Rastreador de Balões</title>
+<meta name="description" content="O pipeline de detecção de balões rodando 100% no seu navegador via Pyodide (Python + OpenCV em WebAssembly) — sem servidor.">
+<style>
+  :root {
+    --bg: #0c1018; --painel: #141b29; --painel2: #1b2436; --borda: #293650;
+    --texto: #e8edf7; --texto2: #8fa0c0; --realce: #7c5cff; --realce2: #23c4a4;
+    --ouro: #f6c344; --perigo: #ff5c7a; --raio: 14px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; color: var(--texto);
+         background:
+           radial-gradient(900px 480px at 85% -5%, #22194a 0%, transparent 60%),
+           radial-gradient(700px 420px at -10% 10%, #0d2b33 0%, transparent 55%),
+           var(--bg);
+         min-height: 100vh; }
+  header { display: flex; align-items: center; gap: 14px; padding: 16px 28px;
+           border-bottom: 1px solid var(--borda);
+           background: rgba(12,16,24,.72); backdrop-filter: blur(10px);
+           position: sticky; top: 0; z-index: 10; }
+  header h1 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+  header h1 small { display: block; font-size: .7rem; color: var(--texto2);
+                    font-weight: 400; letter-spacing: 1px; }
+  header a { margin-left: auto; color: var(--texto2); font-size: .85rem;
+             text-decoration: none; border: 1px solid var(--borda);
+             border-radius: 999px; padding: 7px 16px; }
+  header a:hover { color: var(--texto); }
+  main { display: grid; grid-template-columns: 380px 1fr; gap: 22px;
+         max-width: 1440px; margin: 22px auto; padding: 0 22px; }
+  @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+  .painel { background: var(--painel); border: 1px solid var(--borda);
+            border-radius: var(--raio); padding: 18px; }
+  .painel h2 { margin: 0 0 12px; font-size: .8rem; color: var(--texto2);
+               text-transform: uppercase; letter-spacing: 1.4px; }
+  label { display: block; font-size: .8rem; color: var(--texto2); margin: 12px 0 4px; }
+  input, select { width: 100%; padding: 9px 11px; background: var(--painel2);
+    color: var(--texto); border: 1px solid var(--borda); border-radius: 8px;
+    font-size: .9rem; }
+  input[type=file] { padding: 7px; color: var(--texto2); font-size: .85rem; }
+  input[type=file]::file-selector-button {
+    background: var(--realce2); color: #06281f; border: 0; border-radius: 8px;
+    padding: 8px 14px; margin-right: 10px; cursor: pointer; font-weight: 600; }
+  .linha2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .btn { width: 100%; margin-top: 18px; background: linear-gradient(135deg, var(--realce), #5b3df5);
+         color: #fff; border: 0; border-radius: 10px; padding: 13px;
+         font-size: 1rem; font-weight: 700; cursor: pointer; }
+  .btn:disabled { opacity: .45; cursor: wait; }
+  .btn:hover:not(:disabled) { filter: brightness(1.12); }
+  .nota { background: var(--painel2); border-left: 3px solid var(--realce2);
+          border-radius: 8px; padding: 10px 14px; font-size: .8rem;
+          color: var(--texto2); margin-top: 14px; }
+  #log { background: #0a0e15; border: 1px solid var(--borda); border-radius: 10px;
+         padding: 12px 14px; font-family: ui-monospace, Consolas, monospace;
+         font-size: .78rem; color: #9fb2d8; max-height: 200px; overflow-y: auto;
+         margin-top: 14px; white-space: pre-wrap; }
+  #log .erro { color: var(--perigo); }
+  #log .ok { color: var(--realce2); }
+  .hero img { width: 100%; border-radius: var(--raio); border: 1px solid var(--borda); }
+  .kpis { display: flex; gap: 14px; margin: 0 0 14px; flex-wrap: wrap; }
+  .kpi { background: var(--painel2); border: 1px solid var(--borda); border-radius: 12px;
+         padding: 12px 22px; }
+  .kpi b { display: block; font-size: 1.5rem; color: var(--realce2); }
+  .kpi span { font-size: .7rem; color: var(--texto2); text-transform: uppercase;
+              letter-spacing: 1px; }
+  h2.sec { font-size: 1rem; margin: 24px 0 8px; }
+  table { border-collapse: collapse; width: 100%; background: var(--painel);
+          border-radius: 12px; overflow: hidden; font-size: .88rem; }
+  th, td { border: 1px solid var(--borda); padding: 9px 12px; text-align: center; }
+  th { background: var(--painel2); color: var(--texto2); font-size: .72rem;
+       text-transform: uppercase; letter-spacing: 1px; }
+  td:first-child { text-align: left; font-weight: 600; }
+  td.total { color: var(--ouro); font-weight: 700; }
+  .bolinha { display: inline-block; width: 16px; height: 16px; border-radius: 50%;
+             border: 2px solid rgba(255,255,255,.75); vertical-align: middle; }
+  .vazio { color: var(--texto2); text-align: center; padding: 90px 20px; }
+  .vazio div { font-size: 3rem; margin-bottom: 10px; }
+  .barra { height: 6px; background: var(--painel2); border-radius: 99px;
+           overflow: hidden; margin-top: 14px; display: none; }
+  .barra i { display: block; height: 100%; width: 30%; border-radius: 99px;
+             background: linear-gradient(90deg, var(--realce), var(--realce2));
+             animation: desliza 1.2s ease-in-out infinite alternate; }
+  @keyframes desliza { from { margin-left: 0 } to { margin-left: 70% } }
+</style>
+</head>
+<body>
+<header>
+  <span style="font-size:1.5rem">🎈</span>
+  <h1>Detector no Navegador
+    <small>PYTHON + OPENCV EM WEBASSEMBLY · SEM SERVIDOR</small></h1>
+  <a href="../">← voltar ao projeto</a>
+</header>
+
+<main>
+  <div class="painel">
+    <h2>Entrada</h2>
+    <label>Foto do local</label>
+    <input type="file" id="foto" accept="image/*">
+    <label>Calibração de cores</label>
+    <select id="calibracao">
+      <option value="Foto_Teste_2">Foto_Teste_2 (cores vivas)</option>
+      <option value="Teste_3">Teste_3 (pastéis e branco)</option>
+      <option value="_upload">— enviar meu calibracao_local.json —</option>
+    </select>
+    <input type="file" id="calib-upload" accept=".json" style="display:none;margin-top:8px">
+    <div class="linha2">
+      <div><label>Largura (px)</label><input type="number" id="largura" value="1200"></div>
+      <div><label>eps DBSCAN (px)</label><input type="number" id="eps" value="90"></div>
+    </div>
+    <button class="btn" id="btn-rodar" disabled>⏳ Carregando Python…</button>
+    <div class="barra" id="barra"><i></i></div>
+    <div class="nota">
+      Tudo roda <b>no seu navegador</b>: o Pyodide carrega o Python, o OpenCV e o
+      scikit-learn em WebAssembly (~60&nbsp;MB no primeiro acesso, depois fica em
+      cache) e executa <b>o mesmo código</b> de <code>baloes_v2/src/</code> do
+      repositório. A detecção leva de 15&nbsp;s a 1&nbsp;min dependendo da máquina.
+      Para calibrar cores da sua própria cena, use a aplicação local
+      (<code>python app.py</code>).
+    </div>
+    <div id="log">aguardando…</div>
+  </div>
+
+  <section id="resultado">
+    <div class="painel vazio" id="vazio"><div>🎈</div>
+      Escolha uma foto e clique em <b>Detectar balões</b>.<br>
+      <small>Sugestão: baixe uma das fotos de teste do repositório e use a
+      calibração correspondente.</small></div>
+    <div id="saida" style="display:none">
+      <div class="kpis">
+        <div class="kpi"><b id="kpi-baloes">0</b><span>balões</span></div>
+        <div class="kpi"><b id="kpi-equipes">0</b><span>equipes</span></div>
+        <div class="kpi"><b id="kpi-tempo">–</b><span>tempo</span></div>
+      </div>
+      <div class="hero"><img id="overlay" alt="Detecções"></div>
+      <h2 class="sec">🏆 Placar por equipe</h2>
+      <div style="overflow-x:auto"><table id="placar"></table></div>
+    </div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script>
+const MODULOS = ["tipos", "preprocess", "calibracao", "formas", "candidatos",
+                 "deteccao", "homografia", "agrupamento", "relatorio",
+                 "visualizacao"];
+const log = (msg, cls) => {
+  const el = document.getElementById("log");
+  const linha = document.createElement("div");
+  if (cls) linha.className = cls;
+  linha.textContent = msg;
+  el.appendChild(linha);
+  el.scrollTop = el.scrollHeight;
+};
+
+let pyodide = null;
+let calibUpload = null;
+
+document.getElementById("calibracao").addEventListener("change", (ev) => {
+  document.getElementById("calib-upload").style.display =
+    ev.target.value === "_upload" ? "block" : "none";
+});
+document.getElementById("calib-upload").addEventListener("change", async (ev) => {
+  const arq = ev.target.files[0];
+  if (arq) { calibUpload = await arq.text(); log("calibração enviada: " + arq.name, "ok"); }
+});
+
+async function iniciar() {
+  try {
+    log("baixando Pyodide (Python em WebAssembly)…");
+    pyodide = await loadPyodide();
+    log("Python " + pyodide.runPython("import sys; sys.version.split()[0]"), "ok");
+
+    log("baixando numpy, opencv e scikit-learn (só no 1º acesso)…");
+    await pyodide.loadPackage(["numpy", "opencv-python", "scikit-learn"]);
+    log("pacotes prontos", "ok");
+
+    log("baixando o código do pipeline (baloes_v2/src)…");
+    pyodide.FS.mkdirTree("/app/src");
+    pyodide.FS.mkdirTree("/app/config/calibracoes");
+    for (const mod of MODULOS) {
+      const r = await fetch(`../baloes_v2/src/${mod}.py`);
+      if (!r.ok) throw new Error(`não achei baloes_v2/src/${mod}.py (HTTP ${r.status})`);
+      pyodide.FS.writeFile(`/app/src/${mod}.py`, await r.text());
+    }
+    const rMain = await fetch("../baloes_v2/main.py");
+    if (!rMain.ok) throw new Error("não achei baloes_v2/main.py");
+    pyodide.FS.writeFile("/app/main.py", await rMain.text());
+
+    const rParams = await fetch("../baloes_v2/config/params.json");
+    pyodide.FS.writeFile("/app/config/params.json", await rParams.text());
+    for (const c of ["Foto_Teste_2", "Teste_3"]) {
+      const r = await fetch(`../baloes_v2/config/calibracoes/${c}.json`);
+      if (r.ok) pyodide.FS.writeFile(`/app/config/calibracoes/${c}.json`, await r.text());
+    }
+
+    pyodide.runPython(`
+import sys
+sys.path.insert(0, "/app/src")
+sys.path.insert(0, "/app")
+`);
+    log("pipeline carregado — pronto!", "ok");
+    const btn = document.getElementById("btn-rodar");
+    btn.disabled = false;
+    btn.textContent = "🎯 Detectar balões";
+    btn.addEventListener("click", detectar);
+  } catch (e) {
+    log("FALHA na inicialização: " + e.message, "erro");
+    log("Se o problema persistir, rode a aplicação local (instruções na página inicial).", "erro");
+  }
+}
+
+async function detectar() {
+  const arq = document.getElementById("foto").files[0];
+  if (!arq) { alert("Escolha uma foto primeiro."); return; }
+  const escolha = document.getElementById("calibracao").value;
+  if (escolha === "_upload" && !calibUpload) {
+    alert("Envie o arquivo de calibração ou escolha uma pronta."); return;
+  }
+
+  const btn = document.getElementById("btn-rodar");
+  btn.disabled = true;
+  btn.textContent = "⏳ Processando…";
+  document.getElementById("barra").style.display = "block";
+  const t0 = performance.now();
+
+  try {
+    const bytes = new Uint8Array(await arq.arrayBuffer());
+    pyodide.FS.writeFile("/tmp/foto.bin", bytes);
+    if (escolha === "_upload") {
+      pyodide.FS.writeFile("/app/config/calibracoes/_upload.json", calibUpload);
+    }
+    pyodide.globals.set("CALIB_NOME", escolha);
+    pyodide.globals.set("LARGURA", parseInt(document.getElementById("largura").value) || 1200);
+    pyodide.globals.set("EPS", parseFloat(document.getElementById("eps").value) || 90);
+
+    log(`processando ${arq.name} (largura ${document.getElementById("largura").value}px)…`);
+    const resultado = await pyodide.runPythonAsync(`
+import json, cv2
+from main import executar_pipeline
+
+with open("/app/config/params.json", encoding="utf-8") as f:
+    params = json.load(f)
+with open(f"/app/config/calibracoes/{CALIB_NOME}.json", encoding="utf-8") as f:
+    calibracao = json.load(f)
+
+r = executar_pipeline("/tmp/foto.bin", params, calibracao,
+                      largura=int(LARGURA), caminho_homografia=None,
+                      eps=float(EPS))
+
+_, buf = cv2.imencode(".jpg", r["overlay"], [cv2.IMWRITE_JPEG_QUALITY, 88])
+with open("/tmp/overlay.jpg", "wb") as f:
+    f.write(buf.tobytes())
+
+letras = sorted({m.get("problema", "?") for m in calibracao["cores"].values()
+                 if m.get("ativa", True) and m.get("problema", "?") != "?"})
+json.dumps({
+    "n_baloes": len(r["deteccoes"]),
+    "avisos": r["avisos"],
+    "letras": letras,
+    "grupos": [{"equipe": g.equipe, "problemas": sorted(g.problemas),
+                "cores": sorted(g.cores)} for g in r["grupos"]],
+})
+`);
+    const dados = JSON.parse(resultado);
+
+    const overlayBytes = pyodide.FS.readFile("/tmp/overlay.jpg");
+    document.getElementById("overlay").src =
+      URL.createObjectURL(new Blob([overlayBytes], { type: "image/jpeg" }));
+
+    document.getElementById("kpi-baloes").textContent = dados.n_baloes;
+    document.getElementById("kpi-equipes").textContent = dados.grupos.length;
+    document.getElementById("kpi-tempo").textContent =
+      ((performance.now() - t0) / 1000).toFixed(1) + "s";
+
+    const placar = document.getElementById("placar");
+    let html = "<tr><th>Equipe</th>";
+    for (const l of dados.letras) html += `<th>${l}</th>`;
+    html += "<th>Total</th></tr>";
+    for (const g of dados.grupos) {
+      html += `<tr><td>${g.equipe}</td>`;
+      for (const l of dados.letras)
+        html += `<td>${g.problemas.includes(l) ? '<span class="bolinha" style="background:var(--realce2)"></span>' : ""}</td>`;
+      html += `<td class="total">${g.problemas.length}</td></tr>`;
+    }
+    placar.innerHTML = html;
+
+    for (const aviso of dados.avisos) log("aviso: " + aviso);
+    log(`concluído: ${dados.n_baloes} balões, ${dados.grupos.length} equipes`, "ok");
+    document.getElementById("vazio").style.display = "none";
+    document.getElementById("saida").style.display = "block";
+  } catch (e) {
+    log("FALHA na detecção: " + e.message, "erro");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🎯 Detectar balões";
+    document.getElementById("barra").style.display = "none";
+  }
+}
+
+iniciar();
+</script>
+</body>
+</html>
