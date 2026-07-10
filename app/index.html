@@ -45,9 +45,10 @@
     background: var(--realce2); color: #06281f; border: 0; border-radius: 8px;
     padding: 8px 14px; margin-right: 10px; cursor: pointer; font-weight: 600; }
   .linha2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .btn { width: 100%; margin-top: 18px; background: linear-gradient(135deg, var(--realce), #5b3df5);
+  .btn { width: 100%; margin-top: 14px; background: linear-gradient(135deg, var(--realce), #5b3df5);
          color: #fff; border: 0; border-radius: 10px; padding: 13px;
          font-size: 1rem; font-weight: 700; cursor: pointer; }
+  .btn.sec { background: var(--realce2); color: #06281f; }
   .btn:disabled { opacity: .45; cursor: wait; }
   .btn:hover:not(:disabled) { filter: brightness(1.12); }
   .nota { background: var(--painel2); border-left: 3px solid var(--realce2);
@@ -55,7 +56,7 @@
           color: var(--texto2); margin-top: 14px; }
   #log { background: #0a0e15; border: 1px solid var(--borda); border-radius: 10px;
          padding: 12px 14px; font-family: ui-monospace, Consolas, monospace;
-         font-size: .78rem; color: #9fb2d8; max-height: 200px; overflow-y: auto;
+         font-size: .78rem; color: #9fb2d8; max-height: 190px; overflow-y: auto;
          margin-top: 14px; white-space: pre-wrap; }
   #log .erro { color: var(--perigo); }
   #log .ok { color: var(--realce2); }
@@ -84,6 +85,20 @@
              background: linear-gradient(90deg, var(--realce), var(--realce2));
              animation: desliza 1.2s ease-in-out infinite alternate; }
   @keyframes desliza { from { margin-left: 0 } to { margin-left: 70% } }
+  /* calibração por clique */
+  #painel-calib { display: none; }
+  #calib-wrap { position: relative; display: inline-block; max-width: 100%; }
+  #calib-img { max-width: 100%; border-radius: var(--raio);
+               border: 1px solid var(--borda); cursor: crosshair; display: block; }
+  .marca { position: absolute; width: 18px; height: 18px; border: 3px solid #fff;
+           border-radius: 50%; transform: translate(-50%, -50%);
+           box-shadow: 0 0 0 2px rgba(0,0,0,.55); pointer-events: none; }
+  .amostras { list-style: none; padding: 0; margin: 8px 0 0; }
+  .amostras li { font-size: .84rem; margin: 4px 0; }
+  .amostras button { background: none; border: 0; color: var(--perigo);
+                     cursor: pointer; font-size: .9rem; }
+  #baixar-calib { display: none; margin-top: 10px; font-size: .85rem;
+                  color: var(--realce2); }
 </style>
 </head>
 <body>
@@ -95,39 +110,63 @@
 </header>
 
 <main>
-  <div class="painel">
-    <h2>Entrada</h2>
-    <label>Foto do local</label>
-    <input type="file" id="foto" accept="image/*">
-    <label>Calibração de cores</label>
-    <select id="calibracao">
-      <option value="Foto_Teste_2">Foto_Teste_2 (cores vivas)</option>
-      <option value="Teste_3">Teste_3 (pastéis e branco)</option>
-      <option value="_upload">— enviar meu calibracao_local.json —</option>
-    </select>
-    <input type="file" id="calib-upload" accept=".json" style="display:none;margin-top:8px">
-    <div class="linha2">
-      <div><label>Largura (px)</label><input type="number" id="largura" value="1200"></div>
-      <div><label>eps DBSCAN (px)</label><input type="number" id="eps" value="90"></div>
+  <div>
+    <div class="painel">
+      <h2>Entrada</h2>
+      <label>Foto do local</label>
+      <input type="file" id="foto" accept="image/*">
+      <label>Calibração de cores</label>
+      <select id="calibracao">
+        <option value="_manual" selected>🎨 calibrar clicando na imagem</option>
+        <option value="Foto_Teste_2">Foto_Teste_2 (cores vivas)</option>
+        <option value="Teste_3">Teste_3 (pastéis e branco)</option>
+      </select>
+      <div class="linha2">
+        <div><label>Largura (px)</label><input type="number" id="largura" value="1200"></div>
+        <div><label>eps DBSCAN (px)</label><input type="number" id="eps" value="90"></div>
+      </div>
+      <button class="btn" id="btn-rodar" disabled>⏳ Carregando Python…</button>
+      <div class="barra" id="barra"><i></i></div>
+      <div class="nota">
+        Tudo roda <b>no seu navegador</b>: o Pyodide carrega o Python, o OpenCV e o
+        scikit-learn em WebAssembly (~60&nbsp;MB no primeiro acesso, depois fica em
+        cache) e executa <b>o mesmo código</b> de <code>baloes_v2/src/</code>.
+        A detecção leva de 15&nbsp;s a 1&nbsp;min dependendo da máquina.
+      </div>
+      <div id="log">aguardando…</div>
     </div>
-    <button class="btn" id="btn-rodar" disabled>⏳ Carregando Python…</button>
-    <div class="barra" id="barra"><i></i></div>
-    <div class="nota">
-      Tudo roda <b>no seu navegador</b>: o Pyodide carrega o Python, o OpenCV e o
-      scikit-learn em WebAssembly (~60&nbsp;MB no primeiro acesso, depois fica em
-      cache) e executa <b>o mesmo código</b> de <code>baloes_v2/src/</code> do
-      repositório. A detecção leva de 15&nbsp;s a 1&nbsp;min dependendo da máquina.
-      Para calibrar cores da sua própria cena, use a aplicação local
-      (<code>python app.py</code>).
+
+    <div class="painel" id="painel-calib" style="margin-top:18px">
+      <h2>🎨 Calibração por clique</h2>
+      <div class="linha2">
+        <div><label>Cor do próximo clique</label>
+          <input type="text" id="calib-cor" placeholder="vermelho, branco…"></div>
+        <div><label>Letra do problema</label>
+          <input type="text" id="calib-letra" maxlength="1" placeholder="A"></div>
+      </div>
+      <label>Raio da amostra (px)</label>
+      <input type="number" id="calib-raio" value="8" min="3" max="30">
+      <ul class="amostras" id="calib-lista"></ul>
+      <button class="btn sec" id="btn-concluir" disabled>✅ Concluir calibração</button>
+      <a id="baixar-calib" download="calibracao_local.json">⬇ baixar calibração (reutilizável)</a>
     </div>
-    <div id="log">aguardando…</div>
   </div>
 
   <section id="resultado">
     <div class="painel vazio" id="vazio"><div>🎈</div>
-      Escolha uma foto e clique em <b>Detectar balões</b>.<br>
-      <small>Sugestão: baixe uma das fotos de teste do repositório e use a
-      calibração correspondente.</small></div>
+      <span id="vazio-texto">Escolha uma foto — a imagem aparecerá aqui para você
+      clicar num balão de cada cor.</span><br>
+      <small>Clique num balão <b>perto</b> e num <b>longe</b> da mesma cor: as
+      amostras são fundidas e o modelo cobre a variação de iluminação.</small></div>
+
+    <div class="painel" id="area-calib" style="display:none">
+      <h2>Clique no centro de um balão de cada cor</h2>
+      <p style="font-size:.85rem;color:var(--texto2);margin-top:0">
+        A imagem já está normalizada (Shades-of-Gray + CLAHE) — é exatamente o que
+        o detector vê. Defina a cor e a letra à esquerda antes de cada clique.</p>
+      <div id="calib-wrap"><img id="calib-img" alt="imagem para calibração"></div>
+    </div>
+
     <div id="saida" style="display:none">
       <div class="kpis">
         <div class="kpi"><b id="kpi-baloes">0</b><span>balões</span></div>
@@ -154,19 +193,15 @@ const log = (msg, cls) => {
   el.appendChild(linha);
   el.scrollTop = el.scrollHeight;
 };
+const $ = (id) => document.getElementById(id);
 
 let pyodide = null;
-let calibUpload = null;
+let prontoParaCalibrar = false;  // imagem normalizada carregada no FS
+let larguraCalib = null;         // largura usada na calibração manual
+let calibManualPronta = false;
+let amostras = [];               // [{cor, x, y, problema}]
 
-document.getElementById("calibracao").addEventListener("change", (ev) => {
-  document.getElementById("calib-upload").style.display =
-    ev.target.value === "_upload" ? "block" : "none";
-});
-document.getElementById("calib-upload").addEventListener("change", async (ev) => {
-  const arq = ev.target.files[0];
-  if (arq) { calibUpload = await arq.text(); log("calibração enviada: " + arq.name, "ok"); }
-});
-
+// ---------- inicialização ----------
 async function iniciar() {
   try {
     log("baixando Pyodide (Python em WebAssembly)…");
@@ -202,41 +237,204 @@ sys.path.insert(0, "/app/src")
 sys.path.insert(0, "/app")
 `);
     log("pipeline carregado — pronto!", "ok");
-    const btn = document.getElementById("btn-rodar");
+    const btn = $("btn-rodar");
     btn.disabled = false;
     btn.textContent = "🎯 Detectar balões";
     btn.addEventListener("click", detectar);
+    $("btn-concluir").addEventListener("click", concluirCalibracao);
+    // foto escolhida enquanto o Python carregava? processa agora
+    if ($("foto").files[0]) $("foto").dispatchEvent(new Event("change"));
   } catch (e) {
     log("FALHA na inicialização: " + e.message, "erro");
-    log("Se o problema persistir, rode a aplicação local (instruções na página inicial).", "erro");
+    log("Se persistir, rode a aplicação local (instruções na página inicial).", "erro");
   }
 }
 
+// ---------- modo de calibração ----------
+function atualizarModo() {
+  const manual = $("calibracao").value === "_manual";
+  $("painel-calib").style.display = manual ? "block" : "none";
+  if (!manual) {
+    $("area-calib").style.display = "none";
+    if (!$("saida").style.display || $("saida").style.display === "none")
+      $("vazio").style.display = "block";
+  } else if (prontoParaCalibrar) {
+    $("area-calib").style.display = "block";
+    $("vazio").style.display = "none";
+  }
+}
+$("calibracao").addEventListener("change", atualizarModo);
+atualizarModo();  // o painel de calibração não depende do Python carregado
+
+$("foto").addEventListener("change", async () => {
+  const arq = $("foto").files[0];
+  if (!arq || !pyodide) return;
+  const bytes = new Uint8Array(await arq.arrayBuffer());
+  pyodide.FS.writeFile("/tmp/foto.bin", bytes);
+  calibManualPronta = false;
+  amostras = [];
+  renderAmostras();
+  document.querySelectorAll(".marca").forEach(m => m.remove());
+
+  if ($("calibracao").value === "_manual") {
+    await prepararCalibracao();
+  }
+});
+
+async function prepararCalibracao() {
+  try {
+    larguraCalib = parseInt($("largura").value) || 1200;
+    pyodide.globals.set("LARGURA", larguraCalib);
+    log("normalizando imagem para calibração…");
+    await pyodide.runPythonAsync(`
+import cv2
+from preprocess import carregar, normalizar_iluminacao
+_bgr = carregar("/tmp/foto.bin", largura_maxima=int(LARGURA))
+_bgr_n = normalizar_iluminacao(_bgr)
+cv2.imwrite("/tmp/calib_norm.png", _bgr_n)
+_, _buf = cv2.imencode(".jpg", _bgr_n, [cv2.IMWRITE_JPEG_QUALITY, 90])
+with open("/tmp/calib_view.jpg", "wb") as f:
+    f.write(_buf.tobytes())
+`);
+    const bytes = pyodide.FS.readFile("/tmp/calib_view.jpg");
+    $("calib-img").src = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
+    prontoParaCalibrar = true;
+    $("btn-concluir").disabled = false;
+    $("vazio").style.display = "none";
+    $("saida").style.display = "none";
+    $("area-calib").style.display = "block";
+    log("imagem pronta — clique num balão de cada cor", "ok");
+  } catch (e) {
+    log("FALHA ao preparar calibração: " + e.message, "erro");
+  }
+}
+
+$("calib-img").addEventListener("click", (ev) => {
+  if (!prontoParaCalibrar) return;
+  const cor = $("calib-cor").value.trim().toLowerCase();
+  if (!cor) { alert("Digite o nome da cor antes de clicar."); return; }
+  const letra = ($("calib-letra").value.trim().toUpperCase() || "?");
+  const img = ev.target;
+  const rect = img.getBoundingClientRect();
+  const escala = img.naturalWidth / rect.width;
+  const x = Math.round((ev.clientX - rect.left) * escala);
+  const y = Math.round((ev.clientY - rect.top) * escala);
+  amostras.push({ cor, x, y, problema: letra });
+
+  const marca = document.createElement("div");
+  marca.className = "marca";
+  marca.style.left = (ev.clientX - rect.left) + "px";
+  marca.style.top = (ev.clientY - rect.top) + "px";
+  marca.style.borderColor = "hsl(" + (amostras.length * 63 % 360) + ",90%,65%)";
+  $("calib-wrap").appendChild(marca);
+  renderAmostras();
+});
+
+function renderAmostras() {
+  const ul = $("calib-lista");
+  ul.innerHTML = "";
+  amostras.forEach((a, i) => {
+    const li = document.createElement("li");
+    li.textContent = `${a.cor} (${a.x}, ${a.y}) → ${a.problema} `;
+    const btn = document.createElement("button");
+    btn.textContent = "✕";
+    btn.onclick = () => {
+      amostras.splice(i, 1);
+      const marcas = document.querySelectorAll(".marca");
+      if (marcas[i]) marcas[i].remove();
+      renderAmostras();
+    };
+    li.appendChild(btn);
+    ul.appendChild(li);
+  });
+}
+
+async function concluirCalibracao() {
+  if (amostras.length === 0) { alert("Clique em pelo menos um balão."); return; }
+  try {
+    pyodide.globals.set("AMOSTRAS_JSON", JSON.stringify(amostras));
+    pyodide.globals.set("RAIO", parseInt($("calib-raio").value) || 8);
+    log("construindo modelos de cor a partir dos cliques…");
+    const calibJson = await pyodide.runPythonAsync(`
+import json, cv2
+import numpy as np
+from calibracao import pixels_do_disco, modelo_de_pixels
+
+_bgr = cv2.imread("/tmp/calib_norm.png")
+_amostras = json.loads(AMOSTRAS_JSON)
+
+_por_cor = {}
+for _a in _amostras:
+    _nome = _a["cor"]
+    _d = _por_cor.setdefault(_nome, {"h": [], "s": [], "v": [], "lab": [],
+                                     "problema": _a.get("problema", "?"),
+                                     "n_cliques": 0})
+    _h, _s, _v, _lab = pixels_do_disco(_bgr, int(_a["x"]), int(_a["y"]), int(RAIO))
+    _d["h"].append(_h); _d["s"].append(_s); _d["v"].append(_v); _d["lab"].append(_lab)
+    _d["n_cliques"] += 1
+
+_cores = {}
+for _nome, _d in _por_cor.items():
+    _m = modelo_de_pixels(np.concatenate(_d["h"]), np.concatenate(_d["s"]),
+                          np.concatenate(_d["v"]), np.concatenate(_d["lab"]))
+    _m["problema"] = _d["problema"]
+    _m["ativa"] = True
+    _m["n_cliques"] = _d["n_cliques"]
+    _cores[_nome] = _m
+
+_calib = {"imagem_referencia": "calibração no navegador",
+          "largura_calibracao": _bgr.shape[1],
+          "raio_amostra": int(RAIO), "cores": _cores}
+with open("/app/config/calibracoes/_manual.json", "w", encoding="utf-8") as f:
+    json.dump(_calib, f, ensure_ascii=False, indent=2)
+
+_resumo = {n: ("acromática" if m["acromatica"] else "cromática")
+           for n, m in _cores.items()}
+json.dumps({"resumo": _resumo, "calib": _calib})
+`);
+    const dados = JSON.parse(calibJson);
+    calibManualPronta = true;
+    for (const [nome, tipo] of Object.entries(dados.resumo))
+      log(`  ${nome}: modelo ${tipo}`, "ok");
+    log("calibração concluída — clique em Detectar balões", "ok");
+
+    const link = $("baixar-calib");
+    link.href = URL.createObjectURL(new Blob(
+      [JSON.stringify(dados.calib, null, 2)], { type: "application/json" }));
+    link.style.display = "inline-block";
+  } catch (e) {
+    log("FALHA na calibração: " + e.message, "erro");
+  }
+}
+
+// ---------- detecção ----------
 async function detectar() {
-  const arq = document.getElementById("foto").files[0];
+  const arq = $("foto").files[0];
   if (!arq) { alert("Escolha uma foto primeiro."); return; }
-  const escolha = document.getElementById("calibracao").value;
-  if (escolha === "_upload" && !calibUpload) {
-    alert("Envie o arquivo de calibração ou escolha uma pronta."); return;
+  const escolha = $("calibracao").value;
+  if (escolha === "_manual") {
+    if (!calibManualPronta) {
+      alert("Conclua a calibração primeiro: clique nos balões e em ✅ Concluir.");
+      return;
+    }
+    // a detecção precisa da MESMA largura usada nos cliques
+    $("largura").value = larguraCalib;
   }
 
-  const btn = document.getElementById("btn-rodar");
+  const btn = $("btn-rodar");
   btn.disabled = true;
   btn.textContent = "⏳ Processando…";
-  document.getElementById("barra").style.display = "block";
+  $("barra").style.display = "block";
   const t0 = performance.now();
 
   try {
     const bytes = new Uint8Array(await arq.arrayBuffer());
     pyodide.FS.writeFile("/tmp/foto.bin", bytes);
-    if (escolha === "_upload") {
-      pyodide.FS.writeFile("/app/config/calibracoes/_upload.json", calibUpload);
-    }
     pyodide.globals.set("CALIB_NOME", escolha);
-    pyodide.globals.set("LARGURA", parseInt(document.getElementById("largura").value) || 1200);
-    pyodide.globals.set("EPS", parseFloat(document.getElementById("eps").value) || 90);
+    pyodide.globals.set("LARGURA", parseInt($("largura").value) || 1200);
+    pyodide.globals.set("EPS", parseFloat($("eps").value) || 90);
 
-    log(`processando ${arq.name} (largura ${document.getElementById("largura").value}px)…`);
+    log(`processando ${arq.name} (largura ${$("largura").value}px)…`);
     const resultado = await pyodide.runPythonAsync(`
 import json, cv2
 from main import executar_pipeline
@@ -267,15 +465,12 @@ json.dumps({
     const dados = JSON.parse(resultado);
 
     const overlayBytes = pyodide.FS.readFile("/tmp/overlay.jpg");
-    document.getElementById("overlay").src =
-      URL.createObjectURL(new Blob([overlayBytes], { type: "image/jpeg" }));
+    $("overlay").src = URL.createObjectURL(new Blob([overlayBytes], { type: "image/jpeg" }));
 
-    document.getElementById("kpi-baloes").textContent = dados.n_baloes;
-    document.getElementById("kpi-equipes").textContent = dados.grupos.length;
-    document.getElementById("kpi-tempo").textContent =
-      ((performance.now() - t0) / 1000).toFixed(1) + "s";
+    $("kpi-baloes").textContent = dados.n_baloes;
+    $("kpi-equipes").textContent = dados.grupos.length;
+    $("kpi-tempo").textContent = ((performance.now() - t0) / 1000).toFixed(1) + "s";
 
-    const placar = document.getElementById("placar");
     let html = "<tr><th>Equipe</th>";
     for (const l of dados.letras) html += `<th>${l}</th>`;
     html += "<th>Total</th></tr>";
@@ -285,18 +480,19 @@ json.dumps({
         html += `<td>${g.problemas.includes(l) ? '<span class="bolinha" style="background:var(--realce2)"></span>' : ""}</td>`;
       html += `<td class="total">${g.problemas.length}</td></tr>`;
     }
-    placar.innerHTML = html;
+    $("placar").innerHTML = html;
 
     for (const aviso of dados.avisos) log("aviso: " + aviso);
     log(`concluído: ${dados.n_baloes} balões, ${dados.grupos.length} equipes`, "ok");
-    document.getElementById("vazio").style.display = "none";
-    document.getElementById("saida").style.display = "block";
+    $("vazio").style.display = "none";
+    $("area-calib").style.display = "none";
+    $("saida").style.display = "block";
   } catch (e) {
     log("FALHA na detecção: " + e.message, "erro");
   } finally {
     btn.disabled = false;
     btn.textContent = "🎯 Detectar balões";
-    document.getElementById("barra").style.display = "none";
+    $("barra").style.display = "none";
   }
 }
 
