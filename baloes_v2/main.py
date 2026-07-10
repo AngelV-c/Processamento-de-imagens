@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 from preprocess import carregar
 from deteccao import detectar_baloes
 from homografia import carregar_homografia, retificar, warp_debug
-from agrupamento import agrupar
+from agrupamento import agrupar_com_restricao
 from relatorio import montar_relatorio, salvar_relatorio_json, imprimir_relatorio
 from visualizacao import desenhar_deteccoes, desenhar_grupos, salvar_resultados
 
@@ -58,8 +58,19 @@ def executar_pipeline(
                       "(tools/calibrar_homografia.py).")
         eps_usado = eps if eps is not None else ag["eps_px_fallback"]
 
-    # Etapa 6 — DBSCAN
-    agrupar(deteccoes, eps=eps_usado, min_pts=ag["min_pts"])
+    # Etapa 6 — DBSCAN com a restrição da maratona: cada equipe tem NO
+    # MÁXIMO um balão de cada cor (um por problema resolvido). Cluster
+    # violador é re-separado com eps menor; duplicata inseparável perde
+    # a de menor score (é um falso positivo por construção).
+    deteccoes, descartadas = agrupar_com_restricao(
+        deteccoes, eps=eps_usado, min_pts=ag["min_pts"],
+        fator_reducao=ag.get("fator_reducao", 0.75),
+        eps_min_relativo=ag.get("eps_min_relativo", 0.35),
+    )
+    if descartadas:
+        cores_desc = ", ".join(f"{d.cor} ({d.cx:.0f},{d.cy:.0f})" for d in descartadas)
+        avisos.append(f"Regra de unicidade: {len(descartadas)} duplicata(s) de cor "
+                      f"descartada(s) no mesmo cluster — {cores_desc}.")
 
     # Etapa 7 — relatório (letras de problema vêm da calibração local)
     config_cores = {"cores": [

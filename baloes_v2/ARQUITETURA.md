@@ -73,6 +73,26 @@ parâmetro mostra na hora se regrediu em outra cena — o overfitting da fase
 inicial aconteceu exatamente porque o feedback era manual e uma imagem por
 vez.
 
+## Pesquisa de técnicas e substituições (2ª geração)
+
+Uma revisão da literatura clássica de PDI orientou a troca de três
+componentes por técnicas com fundamento melhor para as dificuldades
+específicas que encontramos:
+
+| Dificuldade | Antes | Agora | Base |
+|---|---|---|---|
+| Oclusão parcial (cluster denso) | HoughCircles | **Círculos por segmentos de arco**: Canny → segmentos conectados → ajuste algébrico de Kåsa → validação por resíduo mediano e cobertura angular. Cada arco gera no máximo um círculo com medida direta de qualidade. | Família [EDCircles](https://www.sciencedirect.com/science/article/abs/pii/S003132031500446X) (detecção por arcos de segmentos de borda); ajuste robusto a [dados parciais com outliers](https://arxiv.org/pdf/2508.03720); [detecção bottom-up com parametrização adaptativa](https://pmc.ncbi.nlm.nih.gov/articles/PMC12031632/) |
+| Limiar de saturação dependente da cena | percentil global de S | **MSER** no canal S: regiões maximamente estáveis através de limiares — invariante a transformações monotônicas de iluminação, baixo custo. O canal L foi testado e removido (propunha camisetas idênticas ao branco em cor). | [Matas et al., BMVC 2002](https://www.robots.ox.ac.uk/~vgg/research/affine/det_eval_files/matas_bmvc2002.pdf); [visão geral MSER](https://en.wikipedia.org/wiki/Maximally_stable_extremal_regions) |
+| Constância de cor entre câmeras | gray-world (média, p=1) | **Shades-of-Gray**: norma de Minkowski p=6 por canal — pixels claros pesam mais, aproxima o white-patch sem a fragilidade a um pixel estourado. Ganhos continuam limitados. | [Finlayson & Trezzi, Shades of Gray and Colour Constancy](https://www.researchgate.net/publication/221502067_Shades_of_Gray_and_Colour_Constancy) |
+| Balão branco vs superfície branca | só portões de L | + **brilho especular** como bônus de score: balão de látex é brilhante e mostra um pequeno reflexo das luzes; paredes/camisetas são foscas. Nunca é porta, só bônus. | física do material (reflexão especular vs difusa) |
+
+E uma restrição do DOMÍNIO virou estrutura: nas regras de maratona cada
+equipe tem no máximo **um balão por cor** (um por problema resolvido). O
+agrupamento usa isso em dois níveis: cluster com cor duplicada é re-separado
+com eps menor (caso típico: duas equipes fundidas por eps grande); se nem o
+eps mínimo separa, a duplicata de menor score é descartada — pela regra, uma
+delas é necessariamente um falso positivo.
+
 ## Priors de domínio que emergiram dos testes
 
 Cor e forma não separam balão branco de teto branco, luminária ou camiseta
@@ -87,11 +107,16 @@ branca — são fisicamente a mesma cor. Três critérios de CONTEXTO resolvem:
 
 ## Resultados (avaliação automática)
 
-| Imagem | Pipeline antigo | Este pipeline |
-|---|---|---|
-| Foto_Teste_2 (19 balões) | 16 (84%) | 18 (95%) |
-| Teste_3 (25 balões) | 10 (40%)* | 11 (44%) |
-| Global | 59% | 66% |
+| Imagem | Pipeline antigo | 1ª geração v2 | 2ª geração (arcos+MSER+SoG) |
+|---|---|---|---|
+| Foto_Teste_2 (19 balões) | 16 (84%) | 18 (95%) | **19 (100%)** |
+| Teste_3 (25 balões) | 10 (40%)* | 11 (44%) | **15 (60%)** |
+| Global | 59% | 66% | **77%** |
+
+Na 2ª geração, a avaliação por posição anotada no Teste_3 (12 balões
+confirmados) reporta precisão 60%, recall 75% e acurácia de cor 89% —
+e dois dos "falsos positivos" apontados são balões reais fora da anotação
+parcial.
 
 \* Os 10 antigos incluíam 5 balões brancos rotulados como "amarelo" e 1
 "azul" inexistente — o número comparável real era menor.

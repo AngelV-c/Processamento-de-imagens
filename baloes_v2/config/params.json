@@ -4,7 +4,7 @@
     "area_minima_relativa": 0.00012,
     "area_maxima_relativa": 0.15,
     "score_minimo": 0.75,
-    "pesos": {"circularidade": 0.2, "solidity": 0.15, "fourier": 0.25, "cor": 0.4},
+    "pesos": {"circularidade": 0.2, "solidity": 0.15, "fourier": 0.25, "cor": 0.4, "brilho": 0.05},
     "conf_cor_minima": 0.30,
     "conf_cor_minima_hough": 0.55,
     "sat_percentil": 85,
@@ -15,7 +15,20 @@
     "kernel_morfologia": 5,
     "meanshift_sp": 10,
     "meanshift_sr": 20,
-    "vias": {"mascaras": true, "hough": true, "saturacao": true}
+    "vias": {"mascaras": true, "arcos": true, "mser": true}
+  },
+  "arcos": {
+    "_comentario": "Via B — círculos por segmentos de arco (família EDCircles): Canny → ajuste de Kåsa → validação por resíduo e cobertura angular.",
+    "canny_baixo": 80,
+    "canny_alto": 160,
+    "comprimento_min": 25,
+    "residuo_max": 2.0,
+    "cobertura_min_graus": 70.0
+  },
+  "mser": {
+    "_comentario": "Via C — MSER (regiões maximamente estáveis) nos canais S e L.",
+    "delta": 8,
+    "max_variation": 0.5
   },
   "modelo": {
     "_comentario": "Ajustes finos do casamento de cor com os modelos calibrados.",
@@ -38,16 +51,13 @@
     "kernel_maximos": 13,
     "limiar_distancia": 0.25
   },
-  "hough": {
-    "dp": 1.2,
-    "param1": 120,
-    "param2": 45,
-    "min_dist_relativa": 0.06
-  },
   "agrupamento": {
     "eps_cm": 60.0,
     "eps_px_fallback": 100.0,
     "min_pts": 1,
-    "_nota_min_pts": "min_pts=1: equipe com um único balão não pode virar 'ruído' do DBSCAN."
+    "fator_reducao": 0.75,
+    "eps_min_relativo": 0.35,
+    "_nota_min_pts": "min_pts=1: equipe com um único balão não pode virar 'ruído' do DBSCAN.",
+    "_nota_restricao": "Regra da maratona: um balão por cor por equipe. Cluster com cor duplicada é re-separado com eps*fator_reducao até eps_min_relativo*eps; se não separar, a duplicata de menor score é descartada."
   }
 }

@@ -19,10 +19,11 @@ import math
 import cv2
 import numpy as np
 
-# S mediana abaixo disso → cor sem matiz confiável. 35 e não mais: um rosa
-# pálido com S≈45 ainda tem matiz utilizável — tratá-lo como acromático faz
-# o modelo casar com qualquer superfície branca da cena.
-SATURACAO_ACROMATICA = 35
+# S mediana abaixo disso → cor sem matiz confiável (branco/cinza/prata).
+# Valor situado entre o branco sob Shades-of-Gray (S_p50≈36, precisa dos
+# portões de brilho L do ramo acromático) e o rosa pálido (S_p50≈47, ainda
+# tem matiz utilizável — como acromático casaria com qualquer parede branca).
+SATURACAO_ACROMATICA = 42
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +163,35 @@ def mascaras_calibradas(hsv: np.ndarray, lab: np.ndarray, modelos: dict,
         m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, kernel)
         mascaras[nome] = m
     return mascaras
+
+
+def classificar_por_matches(regiao_sel: np.ndarray, matches: dict,
+                            lab: np.ndarray, modelos: dict) -> tuple[str | None, float]:
+    """Como classificar_regiao, mas com os casamentos pré-computados.
+
+    Evita recomputar casar_modelo (imagem inteira × cores) por candidato —
+    essencial quando o MSER gera dezenas de regiões.
+    """
+    n_total = int(regiao_sel.sum())
+    if n_total == 0:
+        return None, 0.0
+
+    fracoes = sorted(
+        ((float((m & regiao_sel).sum()) / n_total, nome) for nome, m in matches.items()),
+        reverse=True,
+    )
+    (f1, nome1), *resto = fracoes
+    if f1 == 0.0:
+        return None, 0.0
+
+    if resto and f1 - resto[0][0] < 0.10:
+        ab_regiao = lab[regiao_sel][:, 1:].mean(axis=0)
+        candidatos = [nome1, resto[0][1]]
+        dists = [math.hypot(ab_regiao[0] - modelos[n]["lab_media"][1],
+                            ab_regiao[1] - modelos[n]["lab_media"][2])
+                 for n in candidatos]
+        nome1 = candidatos[int(np.argmin(dists))]
+    return nome1, f1
 
 
 def classificar_regiao(regiao_sel: np.ndarray, hsv: np.ndarray, lab: np.ndarray,

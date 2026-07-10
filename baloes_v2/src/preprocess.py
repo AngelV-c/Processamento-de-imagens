@@ -27,14 +27,26 @@ def carregar(caminho: str, largura_maxima: int | None = 1200) -> np.ndarray:
     return bgr
 
 
-def normalizar_iluminacao(bgr: np.ndarray, ganho_max: float = 1.25) -> np.ndarray:
-    """Gray-world com ganhos limitados + CLAHE no V."""
+def normalizar_iluminacao(bgr: np.ndarray, ganho_max: float = 1.25,
+                          p: float = 6.0) -> np.ndarray:
+    """Shades-of-Gray (norma de Minkowski p=6) com ganhos limitados + CLAHE no V.
+
+    Shades-of-Gray (Finlayson & Trezzi, 2004) generaliza o gray-world: em vez
+    da média simples (p=1), estima o iluminante pela norma-p de cada canal.
+    Com p=6 os pixels claros pesam mais — a estimativa aproxima o white-patch
+    sem a fragilidade dele a um único pixel estourado. Na literatura de
+    constância de cor supera o gray-world de forma consistente.
+
+    O clamp de ganhos continua: cenas dominadas por uma cor quente não devem
+    receber correção agressiva que distorça matizes (rosa→violeta).
+    """
     resultado = bgr.astype(np.float32)
-    media_global = resultado.mean()
+    normas = [float(np.power(np.power(resultado[:, :, c] / 255.0, p).mean(), 1.0 / p))
+              for c in range(3)]
+    norma_media = sum(normas) / 3.0
     for canal in range(3):
-        media_canal = resultado[:, :, canal].mean()
-        if media_canal > 0:
-            ganho = media_global / media_canal
+        if normas[canal] > 1e-6:
+            ganho = norma_media / normas[canal]
             ganho = min(max(ganho, 1.0 / ganho_max), ganho_max)
             resultado[:, :, canal] *= ganho
     bgr_wb = np.clip(resultado, 0, 255).astype(np.uint8)

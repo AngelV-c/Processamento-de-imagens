@@ -71,7 +71,13 @@ def montar_relatorio(deteccoes: list[Deteccao], config: dict) -> list[Grupo]:
                 g.equipe = f"Equipe {indice}"
                 indice += 1
 
-    return sorted(grupos.values(), key=lambda g: g.equipe or "")
+    def _num_equipe(g: Grupo) -> int:
+        try:
+            return int((g.equipe or "0").split()[-1])
+        except ValueError:
+            return 0
+
+    return sorted(grupos.values(), key=_num_equipe)
 
 
 def salvar_relatorio_json(grupos: list[Grupo], caminho: str) -> None:

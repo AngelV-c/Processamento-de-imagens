@@ -1,10 +1,14 @@
 """Interface web do rastreador de balões (Flask).
 
-Duas abas:
-  🎯 Detectar — upload da foto + TODOS os parâmetros do pipeline ajustáveis
-     (score, pesos, vias, priors, watershed, Hough, modelo de cor).
-  🎨 Calibrar — clique nos balões direto no navegador para construir a
-     calibração de cores da cena (sem janela do OpenCV).
+Três abas:
+  🎯 Detecção — foto + todos os parâmetros do pipeline; resultado com
+     placar estilo ICPC (equipes × problemas) e a via de detecção de
+     cada balão (A máscara / B arco / C MSER).
+  🏷️ Cores & Problemas — escolhe quais cores da calibração participam e
+     atribui a letra do problema de cada cor, seguindo as regras da
+     maratona (cores distintas, uma letra por cor, A–Z).
+  🎨 Calibrar cena — clique nos balões direto no navegador para
+     construir os modelos de cor do local.
 
 Uso:
     python app.py            # http://localhost:5000
@@ -34,6 +38,10 @@ app = Flask(__name__)
 
 _UPLOADS = os.path.join(_DIR, "output", "uploads")
 
+_NOMES_VIAS = {"A": "máscara de cor + watershed",
+               "B": "arco de borda (Kåsa)",
+               "C": "MSER (canal S)"}
+
 # (nome_no_form, caminho.pontuado.em.params, tipo)
 _MAPA_FORM = [
     ("score_minimo",        "deteccao.score_minimo",         float),
@@ -41,9 +49,9 @@ _MAPA_FORM = [
     ("peso_sol",            "deteccao.pesos.solidity",       float),
     ("peso_fourier",        "deteccao.pesos.fourier",        float),
     ("peso_cor",            "deteccao.pesos.cor",            float),
+    ("peso_brilho",         "deteccao.pesos.brilho",         float),
     ("conf_cor",            "deteccao.conf_cor_minima",      float),
     ("conf_cor_hough",      "deteccao.conf_cor_minima_hough", float),
-    ("sat_percentil",       "deteccao.sat_percentil",        float),
     ("altura_min",          "deteccao.fracao_altura_min",    float),
     ("altura_max",          "deteccao.fracao_altura_max",    float),
     ("anel_max",            "deteccao.anel_mesma_cor_max",   float),
@@ -55,9 +63,10 @@ _MAPA_FORM = [
     ("ms_sr",               "deteccao.meanshift_sr",         int),
     ("ws_kernel",           "watershed.kernel_maximos",      int),
     ("ws_limiar",           "watershed.limiar_distancia",    float),
-    ("hough_dp",            "hough.dp",                      float),
-    ("hough_p1",            "hough.param1",                  int),
-    ("hough_p2",            "hough.param2",                  int),
+    ("arcos_residuo",       "arcos.residuo_max",             float),
+    ("arcos_cobertura",     "arcos.cobertura_min_graus",     float),
+    ("arcos_comprimento",   "arcos.comprimento_min",         int),
+    ("mser_delta",          "mser.delta",                    int),
     ("min_pts",             "agrupamento.min_pts",           int),
     ("mod_s_piso_fator",    "modelo.s_piso_fator",           float),
     ("mod_s_piso_min",      "modelo.s_piso_min",             float),
@@ -108,13 +117,13 @@ def _aplicar_form(params: dict) -> None:
                 _definir(params, caminho, tipo(float(bruto)))
             except ValueError:
                 pass
-    # Checkbox desmarcado não é enviado pelo navegador — só interpretamos
-    # a ausência como "desligado" quando o marcador do formulário veio junto.
+    # Checkbox desmarcado não é enviado — só interpretamos ausência como
+    # "desligado" quando o marcador do formulário veio junto.
     if "vias_enviadas" in request.form:
         _definir(params, "deteccao.vias", {
             "mascaras": "via_a" in request.form,
-            "hough": "via_b" in request.form,
-            "saturacao": "via_c" in request.form,
+            "arcos": "via_b" in request.form,
+            "mser": "via_c" in request.form,
         })
 
 
@@ -134,6 +143,32 @@ def _jpeg_b64(imagem) -> str:
     return base64.b64encode(buf).decode("ascii")
 
 
+def _swatch_hex(lab_media: list[float]) -> str:
+    """Cor aproximada do modelo (LAB OpenCV → hex RGB) para a interface."""
+    lab = np.array([[[lab_media[0], lab_media[1], lab_media[2]]]], dtype=np.uint8)
+    b, g, r = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)[0, 0]
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _info_calibracao(caminho_rel: str) -> dict | None:
+    caminho = os.path.join(_DIR, caminho_rel)
+    if not os.path.exists(caminho):
+        return None
+    with open(caminho, encoding="utf-8") as f:
+        dados = json.load(f)
+    cores = []
+    for nome, m in dados.get("cores", {}).items():
+        cores.append({
+            "nome": nome,
+            "problema": m.get("problema", "?"),
+            "ativa": m.get("ativa", True),
+            "acromatica": m.get("acromatica", False),
+            "swatch": _swatch_hex(m["lab_media"]),
+            "n_cliques": m.get("n_cliques", 1),
+        })
+    return {"arquivo": caminho_rel, "cores": cores}
+
+
 _PAGINA = r"""
 <!doctype html>
 <html lang="pt-BR">
@@ -143,31 +178,38 @@ _PAGINA = r"""
 <title>Rastreador de Balões</title>
 <style>
   :root {
-    --bg: #0f1420; --painel: #171e2e; --painel2: #1d2639; --borda: #2a3550;
-    --texto: #e6ebf5; --texto2: #93a0bd; --realce: #7c5cff; --realce2: #23c4a4;
-    --perigo: #ff5c7a; --raio: 14px;
+    --bg: #0c1018; --painel: #141b29; --painel2: #1b2436; --borda: #293650;
+    --texto: #e8edf7; --texto2: #8fa0c0; --realce: #7c5cff; --realce2: #23c4a4;
+    --ouro: #f6c344; --perigo: #ff5c7a; --raio: 14px;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif;
-         background: radial-gradient(1200px 600px at 80% -10%, #1c2440 0%, var(--bg) 55%);
-         color: var(--texto); min-height: 100vh; }
-  header { display: flex; align-items: center; gap: 18px; padding: 18px 28px;
+  body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; color: var(--texto);
+         background:
+           radial-gradient(900px 480px at 85% -5%, #22194a 0%, transparent 60%),
+           radial-gradient(700px 420px at -10% 10%, #0d2b33 0%, transparent 55%),
+           var(--bg);
+         min-height: 100vh; }
+  header { display: flex; align-items: center; gap: 18px; padding: 16px 28px;
            border-bottom: 1px solid var(--borda);
-           background: rgba(15,20,32,.7); backdrop-filter: blur(8px);
+           background: rgba(12,16,24,.72); backdrop-filter: blur(10px);
            position: sticky; top: 0; z-index: 10; }
-  header h1 { margin: 0; font-size: 1.15rem; font-weight: 600; letter-spacing: .3px; }
-  header h1 span { color: var(--realce2); }
+  header .logo { font-size: 1.6rem; }
+  header h1 { margin: 0; font-size: 1.1rem; font-weight: 600; letter-spacing: .3px; }
+  header h1 small { display: block; font-size: .72rem; color: var(--texto2);
+                    font-weight: 400; letter-spacing: 1px; }
   nav { margin-left: auto; display: flex; gap: 8px; }
   nav button { background: transparent; color: var(--texto2); border: 1px solid var(--borda);
-               border-radius: 999px; padding: 8px 18px; font-size: .9rem; cursor: pointer; }
+               border-radius: 999px; padding: 8px 18px; font-size: .88rem; cursor: pointer;
+               transition: all .15s; }
+  nav button:hover { color: var(--texto); border-color: var(--texto2); }
   nav button.ativo { background: var(--realce); border-color: var(--realce); color: #fff; }
-  main { display: grid; grid-template-columns: 380px 1fr; gap: 22px;
-         max-width: 1500px; margin: 22px auto; padding: 0 22px; }
-  @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+  main { display: grid; grid-template-columns: 390px 1fr; gap: 22px;
+         max-width: 1560px; margin: 22px auto; padding: 0 22px; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
   .painel { background: var(--painel); border: 1px solid var(--borda);
             border-radius: var(--raio); padding: 18px; }
-  .painel h2 { margin: 0 0 12px; font-size: .95rem; color: var(--texto2);
-               text-transform: uppercase; letter-spacing: 1.2px; }
+  .painel h2 { margin: 0 0 12px; font-size: .82rem; color: var(--texto2);
+               text-transform: uppercase; letter-spacing: 1.4px; }
   label { display: block; font-size: .8rem; color: var(--texto2); margin: 12px 0 4px; }
   input[type=text], input[type=number], select {
     width: 100%; padding: 9px 11px; background: var(--painel2); color: var(--texto);
@@ -182,8 +224,7 @@ _PAGINA = r"""
            font-variant-numeric: tabular-nums; }
   details { border: 1px solid var(--borda); border-radius: 10px;
             padding: 10px 14px; margin-top: 12px; background: var(--painel2); }
-  details summary { cursor: pointer; font-size: .85rem; color: var(--texto);
-                    font-weight: 600; user-select: none; }
+  details summary { cursor: pointer; font-size: .85rem; font-weight: 600; user-select: none; }
   details[open] summary { margin-bottom: 6px; }
   .linha2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .chks { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; }
@@ -194,27 +235,41 @@ _PAGINA = r"""
          font-size: 1rem; font-weight: 700; cursor: pointer; letter-spacing: .3px; }
   .btn:hover { filter: brightness(1.12); }
   .btn.sec { background: var(--realce2); color: #06281f; }
-  .aviso { background: rgba(255,196,0,.12); border: 1px solid #8a6d1a;
+  .aviso { background: rgba(246,195,68,.1); border: 1px solid #7a621f;
            border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-size: .85rem; }
   .erro { background: rgba(255,92,122,.12); border-color: var(--perigo); }
   .hero img { width: 100%; border-radius: var(--raio); border: 1px solid var(--borda); }
   .kpis { display: flex; gap: 14px; margin: 0 0 14px; flex-wrap: wrap; }
   .kpi { background: var(--painel2); border: 1px solid var(--borda); border-radius: 12px;
-         padding: 12px 20px; }
+         padding: 12px 22px; }
   .kpi b { display: block; font-size: 1.6rem; color: var(--realce2); }
-  .kpi span { font-size: .75rem; color: var(--texto2); text-transform: uppercase;
+  .kpi span { font-size: .72rem; color: var(--texto2); text-transform: uppercase;
               letter-spacing: 1px; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-           gap: 12px; margin-top: 12px; }
-  .card { background: var(--painel2); border: 1px solid var(--borda);
+  h2.sec { font-size: 1rem; margin: 26px 0 6px; }
+  h2.sec small { color: var(--texto2); font-weight: 400; font-size: .78rem; }
+  table.placar { border-collapse: collapse; width: 100%; background: var(--painel);
+                 border-radius: 12px; overflow: hidden; font-size: .88rem; }
+  .placar th, .placar td { border: 1px solid var(--borda); padding: 9px 12px;
+                           text-align: center; }
+  .placar th { background: var(--painel2); color: var(--texto2);
+               text-transform: uppercase; font-size: .72rem; letter-spacing: 1px; }
+  .placar td.equipe { text-align: left; font-weight: 600; }
+  .placar td.total { color: var(--ouro); font-weight: 700; }
+  .bolinha { display: inline-block; width: 18px; height: 18px; border-radius: 50%;
+             border: 2px solid rgba(255,255,255,.75); vertical-align: middle; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+           gap: 12px; margin-top: 10px; }
+  .card { background: var(--painel); border: 1px solid var(--borda);
           border-radius: 12px; padding: 14px; }
-  .card h3 { margin: 0 0 8px; font-size: .95rem; }
-  .card small { color: var(--texto2); }
+  .card h3 { margin: 0 0 8px; font-size: .95rem; display: flex; align-items: center; gap: 8px; }
+  .via { display: inline-block; padding: 1px 8px; border-radius: 6px; font-size: .7rem;
+         font-weight: 700; letter-spacing: .5px; }
+  .via.A { background: #1d4ed8; } .via.B { background: #b45309; } .via.C { background: #15803d; }
+  .swatch { display: inline-block; width: 22px; height: 22px; border-radius: 6px;
+            border: 1px solid rgba(255,255,255,.4); vertical-align: middle; }
   .prob { display: inline-flex; align-items: center; justify-content: center;
           min-width: 26px; height: 26px; border-radius: 8px; margin: 3px 3px 0 0;
           background: var(--realce); color: #fff; font-weight: 700; font-size: .85rem; }
-  .chip { display: inline-block; background: var(--borda); border-radius: 999px;
-          padding: 2px 10px; margin: 3px 3px 0 0; font-size: .75rem; }
   .mascaras { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
               gap: 12px; margin-top: 12px; }
   .mascaras figure { margin: 0; }
@@ -226,24 +281,41 @@ _PAGINA = r"""
   .marca { position: absolute; width: 18px; height: 18px; border: 3px solid #fff;
            border-radius: 50%; transform: translate(-50%, -50%);
            box-shadow: 0 0 0 2px rgba(0,0,0,.55); pointer-events: none; }
-  .amostras li { font-size: .85rem; margin: 4px 0; color: var(--texto); }
+  .amostras li { font-size: .85rem; margin: 4px 0; }
   .amostras button { background: none; border: 0; color: var(--perigo);
                      cursor: pointer; font-size: .9rem; }
-  .vazio { color: var(--texto2); text-align: center; padding: 80px 20px; }
+  .vazio { color: var(--texto2); text-align: center; padding: 90px 20px; }
   .vazio div { font-size: 3rem; margin-bottom: 10px; }
-  h2.sec { font-size: 1rem; margin: 22px 0 4px; color: var(--texto); }
+  .cores-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+                gap: 14px; margin-top: 14px; }
+  .cor-card { background: var(--painel2); border: 1px solid var(--borda);
+              border-radius: 12px; padding: 14px; display: grid; gap: 10px; }
+  .cor-card .topo { display: flex; align-items: center; gap: 10px; }
+  .cor-card .topo b { font-size: 1rem; text-transform: capitalize; }
+  .cor-card .topo small { color: var(--texto2); margin-left: auto; }
+  .cor-card .campos { display: grid; grid-template-columns: 90px 1fr; gap: 10px;
+                      align-items: end; }
+  .cor-card label { margin: 0 0 4px; }
+  .regra { background: var(--painel2); border-left: 3px solid var(--realce2);
+           border-radius: 8px; padding: 12px 16px; font-size: .86rem;
+           color: var(--texto2); margin-top: 12px; }
+  .regra b { color: var(--texto); }
+  .dup { outline: 2px solid var(--perigo); }
 </style>
 </head>
 <body>
 <header>
-  <h1>🎈 Rastreador de <span>Balões</span> — PDI clássico, sem ML</h1>
+  <span class="logo">🎈</span>
+  <h1>Rastreador de Balões
+    <small>MARATONA DE PROGRAMAÇÃO · PDI CLÁSSICO · SEM ML</small></h1>
   <nav>
-    <button type="button" id="tab-detectar" class="ativo" onclick="aba('detectar')">🎯 Detectar</button>
-    <button type="button" id="tab-calibrar" onclick="aba('calibrar')">🎨 Calibrar cores</button>
+    <button type="button" id="tab-detectar" class="ativo" onclick="aba('detectar')">🎯 Detecção</button>
+    <button type="button" id="tab-cores" onclick="aba('cores')">🏷️ Cores &amp; Problemas</button>
+    <button type="button" id="tab-calibrar" onclick="aba('calibrar')">🎨 Calibrar cena</button>
   </nav>
 </header>
 
-<!-- ============================ DETECTAR ============================ -->
+<!-- ============================ DETECÇÃO ============================ -->
 <main id="aba-detectar">
   <form class="painel" method="post" action="/processar" enctype="multipart/form-data">
     <h2>Entrada</h2>
@@ -282,42 +354,50 @@ _PAGINA = r"""
         <input type="range" name="peso_cor" min="0" max="1" step="0.05" value="{{ v.peso_cor }}"
                oninput="this.parentNode.querySelector('output').value=this.value">
         <output>{{ v.peso_cor }}</output></div></label>
+      <label>Peso brilho especular (látex reflete a luz) <div class="faixa">
+        <input type="range" name="peso_brilho" min="0" max="0.3" step="0.01" value="{{ v.peso_brilho }}"
+               oninput="this.parentNode.querySelector('output').value=this.value">
+        <output>{{ v.peso_brilho }}</output></div></label>
     </details>
 
     <details>
-      <summary>Vias de candidatos</summary>
+      <summary>Vias de candidatos (como os balões são achados)</summary>
       <input type="hidden" name="vias_enviadas" value="1">
       <div class="chks">
-        <label><input type="checkbox" name="via_a" {% if vias.mascaras %}checked{% endif %}> A · máscaras</label>
-        <label><input type="checkbox" name="via_b" {% if vias.hough %}checked{% endif %}> B · Hough (arcos)</label>
-        <label><input type="checkbox" name="via_c" {% if vias.saturacao %}checked{% endif %}> C · saturação</label>
+        <label><input type="checkbox" name="via_a" {% if vias.mascaras %}checked{% endif %}>
+          <span class="via A">A</span> máscara+watershed</label>
+        <label><input type="checkbox" name="via_b" {% if vias.arcos %}checked{% endif %}>
+          <span class="via B">B</span> arcos de borda</label>
+        <label><input type="checkbox" name="via_c" {% if vias.mser %}checked{% endif %}>
+          <span class="via C">C</span> MSER</label>
       </div>
-      <label>Confiança de cor mínima (vias A/C) <div class="faixa">
+      <label>Confiança de cor mínima (A/C) <div class="faixa">
         <input type="range" name="conf_cor" min="0" max="1" step="0.05" value="{{ v.conf_cor }}"
                oninput="this.parentNode.querySelector('output').value=this.value">
         <output>{{ v.conf_cor }}</output></div></label>
-      <label>Confiança de cor mínima (via B) <div class="faixa">
+      <label>Confiança de cor mínima (B — círculo é perfeito por construção) <div class="faixa">
         <input type="range" name="conf_cor_hough" min="0" max="1" step="0.05" value="{{ v.conf_cor_hough }}"
                oninput="this.parentNode.querySelector('output').value=this.value">
         <output>{{ v.conf_cor_hough }}</output></div></label>
-      <label>Percentil de saturação (via C) <div class="faixa">
-        <input type="range" name="sat_percentil" min="50" max="99" step="1" value="{{ v.sat_percentil }}"
-               oninput="this.parentNode.querySelector('output').value=this.value">
-        <output>{{ v.sat_percentil }}</output></div></label>
       <div class="linha2">
-        <div><label>Hough dp</label><input type="number" step="0.1" name="hough_dp" value="{{ v.hough_dp }}"></div>
-        <div><label>Hough param2</label><input type="number" name="hough_p2" value="{{ v.hough_p2 }}"></div>
+        <div><label>Arcos: resíduo máx (px)</label>
+          <input type="number" step="0.1" name="arcos_residuo" value="{{ v.arcos_residuo }}"></div>
+        <div><label>Arcos: cobertura mín (°)</label>
+          <input type="number" name="arcos_cobertura" value="{{ v.arcos_cobertura }}"></div>
+        <div><label>Arcos: comprimento mín</label>
+          <input type="number" name="arcos_comprimento" value="{{ v.arcos_comprimento }}"></div>
+        <div><label>MSER: delta</label>
+          <input type="number" name="mser_delta" value="{{ v.mser_delta }}"></div>
       </div>
-      <label>Hough param1</label><input type="number" name="hough_p1" value="{{ v.hough_p1 }}">
     </details>
 
     <details>
       <summary>Priors de domínio</summary>
-      <label>Altura mínima dos balões (fração do topo) <div class="faixa">
+      <label>Altura mínima dos balões (fração do topo — corta o teto) <div class="faixa">
         <input type="range" name="altura_min" min="0" max="0.5" step="0.01" value="{{ v.altura_min }}"
                oninput="this.parentNode.querySelector('output').value=this.value">
         <output>{{ v.altura_min }}</output></div></label>
-      <label>Altura máxima dos balões <div class="faixa">
+      <label>Altura máxima (corta pessoas/mesas) <div class="faixa">
         <input type="range" name="altura_max" min="0.3" max="1" step="0.01" value="{{ v.altura_max }}"
                oninput="this.parentNode.querySelector('output').value=this.value">
         <output>{{ v.altura_max }}</output></div></label>
@@ -338,21 +418,17 @@ _PAGINA = r"""
           <input type="number" step="0.00001" name="area_min" value="{{ v.area_min }}"></div>
         <div><label>Área máx (relativa)</label>
           <input type="number" step="0.01" name="area_max" value="{{ v.area_max }}"></div>
-      </div>
-      <div class="linha2">
         <div><label>Kernel morfologia</label>
           <input type="number" name="kernel_morf" value="{{ v.kernel_morf }}" min="3" max="15" step="2"></div>
         <div><label>Kernel máximos (watershed)</label>
           <input type="number" name="ws_kernel" value="{{ v.ws_kernel }}" min="3" max="31" step="2"></div>
+        <div><label>Mean-shift sp</label><input type="number" name="ms_sp" value="{{ v.ms_sp }}"></div>
+        <div><label>Mean-shift sr</label><input type="number" name="ms_sr" value="{{ v.ms_sr }}"></div>
       </div>
       <label>Limiar de distância (watershed) <div class="faixa">
         <input type="range" name="ws_limiar" min="0.05" max="0.6" step="0.01" value="{{ v.ws_limiar }}"
                oninput="this.parentNode.querySelector('output').value=this.value">
         <output>{{ v.ws_limiar }}</output></div></label>
-      <div class="linha2">
-        <div><label>Mean-shift sp</label><input type="number" name="ms_sp" value="{{ v.ms_sp }}"></div>
-        <div><label>Mean-shift sr</label><input type="number" name="ms_sr" value="{{ v.ms_sr }}"></div>
-      </div>
     </details>
 
     <details>
@@ -389,27 +465,42 @@ _PAGINA = r"""
       <div class="kpis">
         <div class="kpi"><b>{{ total }}</b><span>balões</span></div>
         <div class="kpi"><b>{{ grupos|length }}</b><span>equipes</span></div>
-        <div class="kpi"><b>{{ contagem|length }}</b><span>cores</span></div>
+        <div class="kpi"><b>{{ problemas_letras|length }}</b><span>problemas com balão</span></div>
       </div>
       <div class="hero"><img src="data:image/jpeg;base64,{{ overlay }}" alt="Detecções"></div>
 
-      <h2 class="sec">Equipes e problemas resolvidos</h2>
-      <div class="cards">
+      <h2 class="sec">🏆 Placar por equipe
+        <small>— regra da maratona: 1 balão por problema resolvido, cores distintas por problema</small></h2>
+      <table class="placar">
+        <tr><th>Equipe</th>{% for l in problemas_letras %}<th>{{ l }}</th>{% endfor %}<th>Total</th></tr>
         {% for g in grupos %}
+        <tr>
+          <td class="equipe">{{ g.equipe }}</td>
+          {% for l in problemas_letras %}
+          <td>{% if l in g.problemas %}<span class="bolinha"
+              style="background:{{ swatches.get(l, '#888') }}"></span>{% endif %}</td>
+          {% endfor %}
+          <td class="total">{{ g.problemas|length }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+
+      <h2 class="sec">🔍 Como cada balão foi encontrado</h2>
+      <div class="cards">
+        {% for d in deteccoes %}
         <div class="card">
-          <h3>{{ g.equipe }}</h3>
-          <div>{% for p in g.problemas|sort %}<span class="prob">{{ p }}</span>{% endfor %}</div>
-          <div>{% for c in g.cores|sort %}<span class="chip">{{ c }}</span>{% endfor %}</div>
-          <small>centro ({{ "%.0f"|format(g.centro_ret[0]) }}, {{ "%.0f"|format(g.centro_ret[1]) }})</small>
+          <h3><span class="swatch" style="background:{{ cores_swatch.get(d.cor, '#888') }}"></span>
+              {{ d.cor }} <span class="via {{ d.via }}">{{ d.via }}</span></h3>
+          <small>score {{ "%.2f"|format(d.score) }} · circ {{ "%.2f"|format(d.circularidade) }}
+                 · ({{ "%.0f"|format(d.cx) }}, {{ "%.0f"|format(d.cy) }})</small>
         </div>
         {% endfor %}
       </div>
-
-      <h2 class="sec">Contagem por cor</h2>
-      <div class="cards">
-        {% for cor, qtd in contagem %}
-        <div class="card"><h3>{{ cor }}</h3><b style="font-size:1.4rem;color:var(--realce2)">{{ qtd }}</b></div>
-        {% endfor %}
+      <div class="regra">
+        <b>Vias:</b> <span class="via A">A</span> máscara de cor calibrada + watershed ·
+        <span class="via B">B</span> círculo ajustado a arco de borda (Canny + Kåsa — pega
+        balões parcialmente ocluídos) · <span class="via C">C</span> MSER no canal de
+        saturação (blobs estáveis, invariante a iluminação)
       </div>
 
       {% if mascaras %}
@@ -423,10 +514,33 @@ _PAGINA = r"""
     {% else %}
       <div class="painel vazio"><div>🎈</div>
         Envie uma foto e ajuste os parâmetros à esquerda.<br>
-        <small>Todos os limiares do pipeline são calibráveis — nada é fixo no código.</small>
+        <small>Configure as cores e os problemas na aba 🏷️ antes de processar.</small>
       </div>
     {% endif %}
   </section>
+</main>
+
+<!-- ======================== CORES & PROBLEMAS ======================== -->
+<main id="aba-cores" style="display:none; grid-template-columns: 1fr;">
+  <div class="painel">
+    <h2>Cores da cena ↔ problemas da maratona</h2>
+    <div class="regra">
+      Nas maratonas de programação (regras ICPC), os problemas são identificados por
+      <b>letras (A, B, C…)</b> e cada problema tem uma <b>cor de balão única</b>.
+      A equipe recebe o balão da cor ao resolver o problema — logo, dentro de uma
+      equipe <b>cada cor aparece no máximo uma vez</b> (o detector usa isso como
+      restrição do agrupamento). Aqui você escolhe <b>quais cores da calibração
+      participam</b> da detecção e <b>qual letra corresponde a cada cor</b>.
+      Duas cores com a mesma letra são marcadas em vermelho.
+    </div>
+    <label>Calibração</label>
+    <select id="cores-arquivo" onchange="carregarCores()">
+      {% for c in calibracoes %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+    </select>
+    <div class="cores-grid" id="cores-grid"></div>
+    <button class="btn" type="button" onclick="salvarCores()">💾 Salvar atribuições</button>
+    <div id="cores-msg" style="margin-top:10px;font-size:.85rem;color:var(--realce2)"></div>
+  </div>
 </main>
 
 <!-- ============================ CALIBRAR ============================ -->
@@ -460,7 +574,7 @@ _PAGINA = r"""
     <p style="font-size:.85rem;color:var(--texto2)">
       Dica: clique num balão <b>perto</b> e num <b>longe</b> da mesma cor — as amostras
       são fundidas e o modelo cobre a variação de iluminação. A imagem exibida já está
-      normalizada: é exatamente o que o detector vê.</p>
+      normalizada (Shades-of-Gray + CLAHE): é exatamente o que o detector vê.</p>
     <div id="alvo-wrap">
       <img id="alvo" src="" alt="" style="display:none">
     </div>
@@ -469,12 +583,75 @@ _PAGINA = r"""
 
 <script>
 function aba(qual) {
-  document.getElementById('aba-detectar').style.display = qual === 'detectar' ? 'grid' : 'none';
-  document.getElementById('aba-calibrar').style.display = qual === 'calibrar' ? 'grid' : 'none';
-  document.getElementById('tab-detectar').classList.toggle('ativo', qual === 'detectar');
-  document.getElementById('tab-calibrar').classList.toggle('ativo', qual === 'calibrar');
+  for (const nome of ['detectar', 'cores', 'calibrar']) {
+    document.getElementById('aba-' + nome).style.display = (qual === nome)
+      ? (nome === 'cores' ? 'grid' : 'grid') : 'none';
+    document.getElementById('tab-' + nome).classList.toggle('ativo', qual === nome);
+  }
+  if (qual === 'cores') carregarCores();
 }
 
+/* ---------- Cores & Problemas ---------- */
+async function carregarCores() {
+  const arquivo = document.getElementById('cores-arquivo').value;
+  const r = await fetch('/calibracao?arquivo=' + encodeURIComponent(arquivo));
+  const dados = await r.json();
+  const grid = document.getElementById('cores-grid');
+  grid.innerHTML = '';
+  if (dados.erro) { grid.innerHTML = '<p>' + dados.erro + '</p>'; return; }
+  for (const c of dados.cores) {
+    const div = document.createElement('div');
+    div.className = 'cor-card';
+    div.dataset.nome = c.nome;
+    div.innerHTML = `
+      <div class="topo">
+        <span class="swatch" style="background:${c.swatch}"></span>
+        <b>${c.nome}</b>
+        <small>${c.acromatica ? 'acromática' : 'cromática'} · ${c.n_cliques} clique(s)</small>
+      </div>
+      <div class="campos">
+        <div><label>Problema</label>
+          <input type="text" maxlength="1" class="inp-prob" value="${c.problema === '?' ? '' : c.problema}"
+                 oninput="this.value=this.value.toUpperCase(); validarDuplicatas()"></div>
+        <div><label style="display:flex;gap:8px;align-items:center">
+          <input type="checkbox" class="inp-ativa" ${c.ativa ? 'checked' : ''}>
+          usar esta cor na detecção</label></div>
+      </div>`;
+    grid.appendChild(div);
+  }
+  validarDuplicatas();
+}
+
+function validarDuplicatas() {
+  const cards = [...document.querySelectorAll('#cores-grid .cor-card')];
+  const contagem = {};
+  for (const card of cards) {
+    const letra = card.querySelector('.inp-prob').value.trim();
+    if (letra) contagem[letra] = (contagem[letra] || 0) + 1;
+  }
+  for (const card of cards) {
+    const letra = card.querySelector('.inp-prob').value.trim();
+    card.classList.toggle('dup', !!letra && contagem[letra] > 1);
+  }
+}
+
+async function salvarCores() {
+  const arquivo = document.getElementById('cores-arquivo').value;
+  const cores = {};
+  for (const card of document.querySelectorAll('#cores-grid .cor-card')) {
+    cores[card.dataset.nome] = {
+      problema: card.querySelector('.inp-prob').value.trim().toUpperCase() || '?',
+      ativa: card.querySelector('.inp-ativa').checked,
+    };
+  }
+  const r = await fetch('/calibracao/atualizar', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ arquivo, cores }) });
+  const dados = await r.json();
+  document.getElementById('cores-msg').textContent = dados.erro || ('✔ ' + dados.mensagem);
+}
+
+/* ---------- Calibrar cena ---------- */
 let calibId = null;
 let amostras = [];
 
@@ -541,7 +718,7 @@ async function salvarCalib() {
   });
   const dados = await r.json();
   document.getElementById('calib-msg').textContent =
-    dados.erro || ('✔ ' + dados.mensagem + ' Recarregue a aba Detectar para usá-la.');
+    dados.erro || ('✔ ' + dados.mensagem + ' Ajuste as letras na aba 🏷️.');
 }
 </script>
 </body>
@@ -558,6 +735,34 @@ def pagina_inicial():
         v=_valores_form(params), vias=params["deteccao"]["vias"],
         largura=1200, eps=None, mostrar_mascaras=False,
     )
+
+
+@app.route("/calibracao", methods=["GET"])
+def calibracao_info():
+    info = _info_calibracao(request.args.get("arquivo", ""))
+    if info is None:
+        return jsonify({"erro": "Calibração não encontrada."})
+    return jsonify(info)
+
+
+@app.route("/calibracao/atualizar", methods=["POST"])
+def calibracao_atualizar():
+    dados = request.get_json(force=True)
+    caminho = os.path.join(_DIR, dados.get("arquivo", ""))
+    if not os.path.exists(caminho):
+        return jsonify({"erro": "Calibração não encontrada."})
+
+    with open(caminho, encoding="utf-8") as f:
+        calibracao = json.load(f)
+
+    for nome, atualizacao in dados.get("cores", {}).items():
+        if nome in calibracao.get("cores", {}):
+            calibracao["cores"][nome]["problema"] = atualizacao.get("problema", "?")
+            calibracao["cores"][nome]["ativa"] = bool(atualizacao.get("ativa", True))
+
+    with open(caminho, "w", encoding="utf-8") as f:
+        json.dump(calibracao, f, ensure_ascii=False, indent=2)
+    return jsonify({"mensagem": "Atribuições salvas."})
 
 
 @app.route("/processar", methods=["POST"])
@@ -580,7 +785,7 @@ def processar():
     caminho_calib = os.path.join(_DIR, request.form.get("calibracao", ""))
     if not os.path.exists(caminho_calib):
         return render_template_string(_PAGINA, overlay=None, avisos=[],
-                                      erro="Calibração não encontrada — use a aba Calibrar.",
+                                      erro="Calibração não encontrada — use a aba 🎨.",
                                       **contexto)
 
     os.makedirs(_UPLOADS, exist_ok=True)
@@ -602,15 +807,25 @@ def processar():
         return render_template_string(_PAGINA, overlay=None, avisos=[],
                                       erro=f"Falha no processamento: {exc}", **contexto)
 
-    contagem = sorted(Counter(d.cor for d in resultado["deteccoes"]).items())
+    # Placar ICPC: colunas = letras dos problemas das cores ativas
+    cores_ativas = {n: m for n, m in calibracao["cores"].items() if m.get("ativa", True)}
+    letra_por_cor = {n: m.get("problema", "?") for n, m in cores_ativas.items()}
+    problemas_letras = sorted({l for l in letra_por_cor.values() if l != "?"})
+    swatches = {letra_por_cor[n]: _swatch_hex(m["lab_media"])
+                for n, m in cores_ativas.items() if letra_por_cor[n] != "?"}
+    cores_swatch = {n: _swatch_hex(m["lab_media"]) for n, m in calibracao["cores"].items()}
+
     mascaras_b64 = []
     if "mostrar_mascaras" in request.form:
         mascaras_b64 = [(nome, _jpeg_b64(m)) for nome, m in resultado["mascaras"].items()]
 
+    deteccoes = sorted(resultado["deteccoes"], key=lambda d: -d.score)
     return render_template_string(
         _PAGINA, overlay=_jpeg_b64(resultado["overlay"]),
-        grupos=resultado["grupos"], contagem=contagem,
-        total=len(resultado["deteccoes"]), mascaras=mascaras_b64,
+        grupos=resultado["grupos"], deteccoes=deteccoes,
+        problemas_letras=problemas_letras, swatches=swatches,
+        cores_swatch=cores_swatch,
+        total=len(deteccoes), mascaras=mascaras_b64,
         avisos=resultado["avisos"], erro=None, **contexto)
 
 
@@ -665,6 +880,7 @@ def calibrar_salvar():
         modelo = modelo_de_pixels(np.concatenate(d["h"]), np.concatenate(d["s"]),
                                   np.concatenate(d["v"]), np.concatenate(d["lab"]))
         modelo["problema"] = d["problema"]
+        modelo["ativa"] = True
         modelo["n_cliques"] = d["n_cliques"]
         cores[nome] = modelo
 
