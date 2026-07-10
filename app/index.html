@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Detector no Navegador — Rastreador de Balões</title>
-<meta name="description" content="O pipeline de detecção de balões rodando 100% no seu navegador via Pyodide (Python + OpenCV em WebAssembly) — sem servidor.">
+<title>Detector no Navegador | Rastreador de Balões</title>
+<meta name="description" content="Detector de balões de maratona de programação rodando no navegador.">
 <style>
   :root {
     --bg: #0c1018; --painel: #141b29; --painel2: #1b2436; --borda: #293650;
@@ -105,7 +105,7 @@
 <header>
   <span style="font-size:1.5rem">🎈</span>
   <h1>Detector no Navegador
-    <small>PYTHON + OPENCV EM WEBASSEMBLY · SEM SERVIDOR</small></h1>
+    <small>DETECÇÃO DIRETO NO NAVEGADOR · NADA PARA INSTALAR</small></h1>
   <a href="../">← voltar ao projeto</a>
 </header>
 
@@ -128,10 +128,13 @@
       <button class="btn" id="btn-rodar" disabled>⏳ Carregando Python…</button>
       <div class="barra" id="barra"><i></i></div>
       <div class="nota">
-        Tudo roda <b>no seu navegador</b>: o Pyodide carrega o Python, o OpenCV e o
-        scikit-learn em WebAssembly (~60&nbsp;MB no primeiro acesso, depois fica em
-        cache) e executa <b>o mesmo código</b> de <code>baloes_v2/src/</code>.
-        A detecção leva de 15&nbsp;s a 1&nbsp;min dependendo da máquina.
+        <b>Como usar:</b><br>
+        1. Aguarde o carregamento terminar (só demora no primeiro acesso).<br>
+        2. Escolha a foto do local.<br>
+        3. Digite o nome da cor e a letra do problema, e clique num balão de
+           cada cor na imagem. Repita para todas as cores.<br>
+        4. Clique em <b>✅ Concluir calibração</b>.<br>
+        5. Clique em <b>🎯 Detectar balões</b> e aguarde o resultado.
       </div>
       <div id="log">aguardando…</div>
     </div>
@@ -154,16 +157,15 @@
 
   <section id="resultado">
     <div class="painel vazio" id="vazio"><div>🎈</div>
-      <span id="vazio-texto">Escolha uma foto — a imagem aparecerá aqui para você
+      <span id="vazio-texto">Escolha uma foto. A imagem aparecerá aqui para você
       clicar num balão de cada cor.</span><br>
-      <small>Clique num balão <b>perto</b> e num <b>longe</b> da mesma cor: as
-      amostras são fundidas e o modelo cobre a variação de iluminação.</small></div>
+      <small>Dica: clique num balão perto e num longe da mesma cor para melhorar
+      o resultado.</small></div>
 
     <div class="painel" id="area-calib" style="display:none">
       <h2>Clique no centro de um balão de cada cor</h2>
       <p style="font-size:.85rem;color:var(--texto2);margin-top:0">
-        A imagem já está normalizada (Shades-of-Gray + CLAHE) — é exatamente o que
-        o detector vê. Defina a cor e a letra à esquerda antes de cada clique.</p>
+        Defina a cor e a letra do problema à esquerda antes de cada clique.</p>
       <div id="calib-wrap"><img id="calib-img" alt="imagem para calibração"></div>
     </div>
 
@@ -204,15 +206,15 @@ let amostras = [];               // [{cor, x, y, problema}]
 // ---------- inicialização ----------
 async function iniciar() {
   try {
-    log("baixando Pyodide (Python em WebAssembly)…");
+    log("carregando componentes…");
     pyodide = await loadPyodide();
-    log("Python " + pyodide.runPython("import sys; sys.version.split()[0]"), "ok");
+    log("componentes carregados", "ok");
 
-    log("baixando numpy, opencv e scikit-learn (só no 1º acesso)…");
+    log("baixando bibliotecas (demora só no primeiro acesso)…");
     await pyodide.loadPackage(["numpy", "opencv-python", "scikit-learn"]);
-    log("pacotes prontos", "ok");
+    log("bibliotecas prontas", "ok");
 
-    log("baixando o código do pipeline (baloes_v2/src)…");
+    log("baixando o detector…");
     pyodide.FS.mkdirTree("/app/src");
     pyodide.FS.mkdirTree("/app/config/calibracoes");
     for (const mod of MODULOS) {
@@ -236,7 +238,7 @@ import sys
 sys.path.insert(0, "/app/src")
 sys.path.insert(0, "/app")
 `);
-    log("pipeline carregado — pronto!", "ok");
+    log("tudo pronto!", "ok");
     const btn = $("btn-rodar");
     btn.disabled = false;
     btn.textContent = "🎯 Detectar balões";
@@ -285,7 +287,7 @@ async function prepararCalibracao() {
   try {
     larguraCalib = parseInt($("largura").value) || 1200;
     pyodide.globals.set("LARGURA", larguraCalib);
-    log("normalizando imagem para calibração…");
+    log("preparando a imagem…");
     await pyodide.runPythonAsync(`
 import cv2
 from preprocess import carregar, normalizar_iluminacao
@@ -303,7 +305,7 @@ with open("/tmp/calib_view.jpg", "wb") as f:
     $("vazio").style.display = "none";
     $("saida").style.display = "none";
     $("area-calib").style.display = "block";
-    log("imagem pronta — clique num balão de cada cor", "ok");
+    log("imagem pronta: clique num balão de cada cor", "ok");
   } catch (e) {
     log("FALHA ao preparar calibração: " + e.message, "erro");
   }
@@ -354,7 +356,7 @@ async function concluirCalibracao() {
   try {
     pyodide.globals.set("AMOSTRAS_JSON", JSON.stringify(amostras));
     pyodide.globals.set("RAIO", parseInt($("calib-raio").value) || 8);
-    log("construindo modelos de cor a partir dos cliques…");
+    log("processando as amostras de cor…");
     const calibJson = await pyodide.runPythonAsync(`
 import json, cv2
 import numpy as np
@@ -396,7 +398,7 @@ json.dumps({"resumo": _resumo, "calib": _calib})
     calibManualPronta = true;
     for (const [nome, tipo] of Object.entries(dados.resumo))
       log(`  ${nome}: modelo ${tipo}`, "ok");
-    log("calibração concluída — clique em Detectar balões", "ok");
+    log("calibração concluída: clique em Detectar balões", "ok");
 
     const link = $("baixar-calib");
     link.href = URL.createObjectURL(new Blob(

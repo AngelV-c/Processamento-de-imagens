@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rastreador de Balões — Maratona de Programação</title>
-<meta name="description" content="Detecção de balões coloridos por equipe em maratonas de programação com processamento digital de imagens clássico — sem machine learning.">
+<title>Rastreador de Balões | Maratona de Programação</title>
+<meta name="description" content="Detecção de balões coloridos por equipe em maratonas de programação com processamento digital de imagens clássico, sem machine learning.">
 <style>
   :root {
     --bg: #0c1018; --painel: #141b29; --painel2: #1b2436; --borda: #293650;
@@ -76,7 +76,7 @@
   <div class="balao">🎈</div>
   <h1>Rastreador de <span>Balões</span></h1>
   <p class="sub">Identifica quais problemas cada equipe de uma maratona de programação
-     resolveu, a partir de uma única câmera — cada cor de balão é um problema.
+     resolveu, a partir de uma única câmera. Cada cor de balão é um problema.
      100% processamento digital de imagens clássico, <b>sem machine learning</b>.</p>
   <div class="tags">
     <span class="tag">OpenCV</span><span class="tag">Watershed</span>
@@ -92,7 +92,7 @@
   <p style="margin-top:34px">
     <a href="app/" style="display:inline-block;background:linear-gradient(135deg,var(--realce),#5b3df5);
        color:#fff;text-decoration:none;font-weight:700;font-size:1.05rem;
-       padding:15px 34px;border-radius:12px">🚀 Testar no navegador — sem instalar nada</a>
+       padding:15px 34px;border-radius:12px">🚀 Testar no navegador, sem instalar nada</a>
   </p>
   <p style="color:var(--texto2);font-size:.82rem;margin-top:10px">
     O pipeline Python roda no seu navegador via WebAssembly (Pyodide + OpenCV).</p>
@@ -104,12 +104,11 @@
      casco convexo por equipe com as letras dos problemas resolvidos.</p>
   <div class="grid2">
     <figure><img src="assets/resultado_foto2.jpg" alt="Detecções na Foto_Teste_2">
-      <figcaption><b>Foto_Teste_2</b> — 19/19 balões, cores vivas, cluster denso
+      <figcaption><b>Foto_Teste_2</b>: 19/19 balões, cores vivas, cluster denso
       resolvido pela via de arcos de borda.</figcaption></figure>
     <figure><img src="assets/resultado_teste3.jpg" alt="Detecções no Teste_3">
-      <figcaption><b>Teste_3</b> — cena difícil: maioria dos balões é branca ou
-      rosa-pastel, impossível para segmentação por matiz — o modelo acromático
-      (brilho L + croma a-b) os alcança.</figcaption></figure>
+      <figcaption><b>Teste_3</b>: cena difícil, com maioria dos balões brancos ou
+      rosa-pastel. O modelo acromático (brilho L + croma a-b) os alcança.</figcaption></figure>
   </div>
 </section>
 
@@ -120,11 +119,11 @@
      cada cor recebe a letra do problema da maratona.</p>
   <div class="grid2">
     <figure><img src="assets/ui_deteccao.png" alt="Aba de detecção">
-      <figcaption><b>🎯 Detecção</b> — score combinado, vias de candidatos, priors de
+      <figcaption><b>🎯 Detecção</b>: score combinado, vias de candidatos, priors de
       domínio e modelo de cor, tudo exposto. O resultado traz um placar estilo ICPC
       (equipes × problemas).</figcaption></figure>
     <figure><img src="assets/ui_cores.png" alt="Aba de cores e problemas">
-      <figcaption><b>🏷️ Cores &amp; Problemas</b> — escolha quais cores da calibração
+      <figcaption><b>🏷️ Cores &amp; Problemas</b>: escolha quais cores da calibração
       participam e atribua a letra de cada problema, com validação de duplicatas.</figcaption></figure>
   </div>
 </section>
@@ -132,14 +131,14 @@
 <section class="container">
   <h2>Como funciona</h2>
   <p class="desc">Pipeline em 7 etapas, com três vias independentes de geração de
-     candidatos — detectores fracos diferentes falham em lugares diferentes.</p>
+     candidatos: detectores fracos diferentes falham em lugares diferentes.</p>
   <div class="etapas">
     <div class="card"><h3><span class="num">1</span> Normalização</h3>
-      <p>Shades-of-Gray (norma de Minkowski p=6) com ganhos limitados + CLAHE —
+      <p>Shades-of-Gray (norma de Minkowski p=6) com ganhos limitados + CLAHE:
       câmeras e iluminações diferentes viram imagens parecidas.</p></div>
     <div class="card"><h3><span class="num">2</span> Calibração local</h3>
       <p>O operador clica em 1+ balão de cada cor na foto do próprio local; os modelos
-      (matiz circular, percentis S/V/L, croma a-b) nascem da cena — não existe
+      (matiz circular, percentis S/V/L, croma a-b) nascem da cena; não existe
       configuração universal. Cores acromáticas (branco) são detectadas e modeladas
       por brilho + croma.</p></div>
     <div class="card"><h3><span class="num">3</span> Candidatos multi-via</h3>
@@ -149,14 +148,14 @@
          <span class="via C">C</span>MSER no canal de saturação.</p></div>
     <div class="card"><h3><span class="num">4</span> Score combinado</h3>
       <p>circularidade + solidity + energia de Fourier + confiança de cor + brilho
-      especular, num limiar único — um balão ocluído com cor perfeita sobrevive à
+      especular, num limiar único, um balão ocluído com cor perfeita sobrevive à
       circularidade baixa.</p></div>
     <div class="card"><h3><span class="num">5</span> Homografia</h3>
       <p>4 cliques num retângulo conhecido retificam os centroides para coordenadas
-      métricas — um único raio de agrupamento vale para todas as fileiras.</p></div>
+      métricas, e um único raio de agrupamento vale para todas as fileiras.</p></div>
     <div class="card"><h3><span class="num">6</span> DBSCAN + regra da maratona</h3>
       <p>Agrupamento por densidade com a restrição de unicidade: cada equipe tem no
-      máximo um balão por cor — cluster violador é re-separado; duplicata inseparável
+      máximo um balão por cor. Cluster violador é re-separado; duplicata inseparável
       é falso positivo por construção.</p></div>
     <div class="card"><h3><span class="num">7</span> Relatório ICPC</h3>
       <p>Placar equipes × problemas (letras A–Z), cores mapeadas para problemas,
@@ -166,7 +165,7 @@
 
 <section class="container">
   <h2>Evolução medida</h2>
-  <p class="desc">Avaliação automática contra gabarito anotado (posição + cor) — cada
+  <p class="desc">Avaliação automática contra gabarito anotado (posição + cor): cada
      mudança de parâmetro é validada contra todas as cenas de uma vez.</p>
   <table>
     <tr><th>Imagem</th><th>Pipeline inicial</th><th>1ª geração</th><th>2ª geração</th></tr>
@@ -185,7 +184,7 @@
   <div class="regra">
     Nas maratonas de programação (regras ICPC), os problemas são identificados por
     <b>letras (A, B, C…)</b> e cada problema tem uma <b>cor de balão única</b>. A
-    equipe recebe o balão ao resolver o problema — logo, dentro de uma equipe
+    equipe recebe o balão ao resolver o problema. Logo, dentro de uma equipe
     <b>cada cor aparece no máximo uma vez</b>. O sistema usa essas regras como
     estrutura: a atribuição cor↔letra é feita na interface, a laranja das mesas é
     reservada, e a unicidade de cor por cluster é uma restrição do agrupamento.
