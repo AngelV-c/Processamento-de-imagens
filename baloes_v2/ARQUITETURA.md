@@ -1,4 +1,4 @@
-# Arquitetura — por que o código foi refeito assim
+# Arquitetura
 
 Este documento registra as cinco recomendações que nasceram das limitações
 encontradas durante o desenvolvimento iterativo do `baloes/` original, e que
